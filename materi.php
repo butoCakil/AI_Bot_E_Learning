@@ -538,11 +538,13 @@ if ($is_evaluasi && $konten_aktif) {
     <!-- TOP BAR -->
     <div class="topbar">
         <div class="topbar-left">AdaptLearn PRE</div>
-        <div class="topbar-right">
+        <div class="topbar-right" style="display:flex;align-items:center;gap:12px">
             <span
                 class="badge-profil"><?= htmlspecialchars($label_profil[$profil_learning] ?? $profil_learning) ?></span>
             <span class="badge-level"><?= htmlspecialchars($label_level[$level] ?? $level) ?></span>
-            <span><?= htmlspecialchars($_SESSION['nama']) ?></span>
+            <a href="profil.php" style="color:rgba(255,255,255,0.85);font-size:13px;text-decoration:none">
+                <?= htmlspecialchars($_SESSION['nama']) ?>
+            </a>
         </div>
     </div>
 
