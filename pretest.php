@@ -5,10 +5,7 @@ require_once 'config/soal_pretest.php';
 require_once 'includes/functions.php';
 
 // Guard — harus sudah registrasi
-if (empty($_SESSION['user_id'])) {
-    header('Location: index.php');
-    exit;
-}
+require_login();
 
 // Inisialisasi sesi pretest
 if (empty($_SESSION['pretest_mulai'])) {

@@ -41,36 +41,4 @@ define('APP_URL',  'http://103.67.78.4');
 define('APP_NAME', 'AdaptLearn PRE — SMK Bansari');
 define('APP_ENV',  'development');
 
-// ─── Helper: kirim pesan WA via Fonnte ──────────────────
-function kirim_wa(string $nomor, string $pesan): bool {
-    $data = [
-        'target'  => $nomor,
-        'message' => $pesan,
-    ];
-    $ch = curl_init(FONNTE_URL);
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_POST           => true,
-        CURLOPT_POSTFIELDS     => $data,
-        CURLOPT_HTTPHEADER     => ['Authorization: ' . FONNTE_TOKEN],
-    ]);
-    $response = curl_exec($ch);
-    curl_close($ch);
-    $result = json_decode($response, true);
-    return isset($result['status']) && $result['status'] === true;
-}
-
-// ─── Helper: panggil Python classifier ──────────────────
-function classify_siswa(array $jawaban_sjt, int $skor): array {
-    $input = escapeshellarg(json_encode([
-        'sjt'  => $jawaban_sjt,
-        'skor' => $skor,
-    ]));
-    $output = shell_exec(PYTHON_BIN . ' ' . CLASSIFY_SCRIPT . ' ' . $input . ' 2>&1');
-    $result = json_decode($output, true);
-    if (!$result || $result['status'] !== 'ok') {
-        return ['status' => 'error', 'message' => $output];
-    }
-    return $result;
-}
 ?>
