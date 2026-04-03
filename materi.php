@@ -127,6 +127,9 @@ $soal_evaluasi = [];
 if ($is_evaluasi && $konten_aktif) {
     $soal_evaluasi = json_decode($konten_aktif['isi'], true) ?? [];
 }
+
+// Halaman finish
+$is_finish = isset($_GET['finish']);
 ?>
 <!DOCTYPE html>
 <html lang="id">
@@ -521,6 +524,14 @@ if ($is_evaluasi && $konten_aktif) {
             cursor: not-allowed;
         }
 
+        .btn-success {
+            background: #27ae60;
+            color: #fff;
+        }
+        .btn-success:hover {
+            background: #219a52;
+        }
+
         @media (max-width: 768px) {
             .layout {
                 flex-direction: column;
@@ -600,7 +611,22 @@ if ($is_evaluasi && $konten_aktif) {
 
         <!-- MAIN CONTENT -->
         <div class="main">
-            <?php if ($konten_aktif): ?>
+            <?php if ($is_finish): ?>
+                <div class="content-card" style="text-align:center;padding:48px 32px">
+                    <div style="font-size:56px;margin-bottom:16px">🎉</div>
+                    <h2 style="color:#0f3460;margin-bottom:12px">Selamat! Semua Materi Selesai</h2>
+                    <p style="color:#555;font-size:15px;margin-bottom:32px">
+                        Kamu telah menyelesaikan seluruh materi pembelajaran.<br>
+                        Langkah berikutnya adalah mengerjakan <strong>Post-Test</strong>.
+                    </p>
+                    <a href="/posttest.php" class="btn btn-success" style="font-size:16px;padding:14px 36px">
+                        Kerjakan Post-Test →
+                    </a>
+                    <div style="margin-top:16px">
+                        <a href="/profil.php" style="color:#888;font-size:13px">Lihat profil & progress saya</a>
+                    </div>
+                </div>
+            <?php elseif ($konten_aktif): ?>
 
                 <div class="content-card">
                     <div class="content-meta">
@@ -643,20 +669,29 @@ if ($is_evaluasi && $konten_aktif) {
                 </div>
 
                 <!-- Navigasi prev/next -->
+                <?php
+                $topik_keys = array_keys($topik_list);
+                $topik_idx  = array_search($topik_aktif, $topik_keys);
+                $next_topik = $topik_keys[$topik_idx + 1] ?? null;
+                ?>
                 <div class="nav-buttons">
                     <?php if ($prev_id): ?>
-                        <a href="materi.php?topik=<?= $topik_aktif ?>&konten=<?= $prev_id ?>" class="btn btn-outline">←
-                            Sebelumnya</a>
+                        <a href="materi.php?topik=<?= $topik_aktif ?>&konten=<?= $prev_id ?>" class="btn btn-outline">← Sebelumnya</a>
                     <?php else: ?>
                         <span class="btn btn-disabled">← Sebelumnya</span>
                     <?php endif; ?>
 
                     <?php if ($next_id): ?>
+                        <!-- Masih ada konten berikutnya di topik ini -->
                         <a href="materi.php?topik=<?= $topik_aktif ?>&konten=<?= $next_id ?>"
                             class="btn btn-primary">Selanjutnya →</a>
-                    <?php else: ?>
-                        <a href="materi.php?topik=<?= urlencode(array_keys($topik_list)[array_search($topik_aktif, array_keys($topik_list)) + 1] ?? '') ?>"
+                    <?php elseif ($next_topik): ?>
+                        <!-- Konten habis, masih ada topik berikutnya -->
+                        <a href="materi.php?topik=<?= urlencode($next_topik) ?>"
                             class="btn btn-primary">Topik Berikutnya →</a>
+                    <?php else: ?>
+                        <!-- Topik terakhir, konten habis → Finish -->
+                        <a href="materi.php?finish=1" class="btn btn-success">🏁 Selesai Semua Materi</a>
                     <?php endif; ?>
                 </div>
 

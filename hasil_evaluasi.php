@@ -33,6 +33,51 @@ $pesan = $persentase >= 80
 
 // Hapus session evaluasi agar tidak muncul lagi
 unset($_SESSION['hasil_evaluasi']);
+
+// Tentukan navigasi berikutnya setelah evaluasi
+$topik_keys   = array_keys($topik_label);
+$topik_idx    = array_search($topik, $topik_keys);
+$next_topik   = $topik_keys[$topik_idx + 1] ?? null;
+
+// Cari apakah ada konten setelah evaluasi di topik ini (berdasarkan profil siswa)
+$pdo          = db();
+$user_id_nav  = $_SESSION['user_id'];
+$profil_nav   = $pdo->prepare("SELECT profil_gabungan FROM pre_test_results WHERE user_id = ? ORDER BY created_at DESC LIMIT 1");
+$profil_nav->execute([$user_id_nav]);
+$profil_nav   = $profil_nav->fetchColumn();
+
+$next_konten_id   = null;
+$next_konten_topik = null;
+
+if ($profil_nav) {
+    $rule_nav = $pdo->prepare("SELECT urutan_content FROM adaptation_rules WHERE profil_gabungan = ? AND topik = ? LIMIT 1");
+    $rule_nav->execute([$profil_nav, $topik]);
+    $urutan_nav = json_decode($rule_nav->fetchColumn(), true) ?? [];
+
+    // Cari id konten evaluasi yang baru dikerjakan
+    if ($urutan_nav) {
+        $placeholders = implode(',', array_fill(0, count($urutan_nav), '?'));
+        $konten_nav   = $pdo->prepare("SELECT id, tipe FROM `content` WHERE id IN ($placeholders)");
+        $konten_nav->execute($urutan_nav);
+        $konten_map   = array_column($konten_nav->fetchAll(), 'tipe', 'id');
+
+        // Susun ulang sesuai urutan, cari posisi evaluasi
+        $eval_pos = null;
+        $urutan_unik = array_unique($urutan_nav);
+        foreach ($urutan_unik as $pos => $cid) {
+            if (($konten_map[$cid] ?? '') === 'evaluasi') {
+                $eval_pos = $pos;
+                break;
+            }
+        }
+
+        // Jika ada konten setelah evaluasi di topik ini
+        if ($eval_pos !== null && isset($urutan_unik[$eval_pos + 1])) {
+            $next_konten_id    = $urutan_unik[$eval_pos + 1];
+            $next_konten_topik = $topik;
+        }
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="id">
@@ -232,6 +277,15 @@ unset($_SESSION['hasil_evaluasi']);
             background: #16213e;
         }
 
+        .btn-success {
+            background: #27ae60;
+            color: #fff;
+        }
+
+        .btn-success:hover {
+            background: #219a52;
+        }
+
         .btn-outline {
             background: transparent;
             border: 2px solid #0f3460;
@@ -284,8 +338,16 @@ unset($_SESSION['hasil_evaluasi']);
 
             <div class="nav-buttons" style="margin-top:24px">
                 <a href="/materi.php?topik=<?= urlencode($topik) ?>" class="btn btn-outline">← Kembali ke Materi</a>
-                <a href="/materi.php?topik=<?= urlencode(array_keys($topik_label)[array_search($topik, array_keys($topik_label)) + 1] ?? $topik) ?>"
-                    class="btn btn-primary">Topik Berikutnya →</a>
+
+                <?php if ($next_konten_id): ?>
+                    <a href="/materi.php?topik=<?= urlencode($next_konten_topik) ?>&konten=<?= $next_konten_id ?>"
+                        class="btn btn-primary">Materi Berikutnya →</a>
+                <?php elseif ($next_topik): ?>
+                    <a href="/materi.php?topik=<?= urlencode($next_topik) ?>"
+                        class="btn btn-primary">Topik Berikutnya →</a>
+                <?php else: ?>
+                    <a href="/materi.php?finish=1" class="btn btn-success">🏁 Selesai Semua Materi</a>
+                <?php endif; ?>
             </div>
         </div>
 
