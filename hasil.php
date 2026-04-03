@@ -2,12 +2,40 @@
 session_start();
 require_once 'config/config.php';
 
-if (empty($_SESSION['hasil_pretest']) || empty($_SESSION['user_id'])) {
-    header('Location: index.php');
+if (empty($_SESSION['user_id'])) {
+    header('Location: login.php');
     exit;
 }
 
-$hasil  = $_SESSION['hasil_pretest'];
+// Ambil dari session, fallback ke database
+if (!empty($_SESSION['hasil_pretest'])) {
+    $hasil = $_SESSION['hasil_pretest'];
+    unset($_SESSION['hasil_pretest']);
+} else {
+    // Fallback: ambil dari database
+    $pdo_h = db();
+    $stmt_h = $pdo_h->prepare("
+        SELECT * FROM pre_test_results
+        WHERE user_id = ?
+        ORDER BY created_at DESC
+        LIMIT 1
+    ");
+    $stmt_h->execute([$_SESSION['user_id']]);
+    $row_h = $stmt_h->fetch();
+
+    if (!$row_h) {
+        header('Location: pretest.php');
+        exit;
+    }
+
+    $hasil = [
+        'profil_learning' => $row_h['profil_learning'],
+        'level'           => $row_h['level_kemampuan'],
+        'skor'            => $row_h['skor_pengetahuan'],
+        'probabilitas'    => json_decode($row_h['probabilitas'], true),
+    ];
+}
+
 $nama   = $_SESSION['nama'];
 $kelas  = $_SESSION['kelas'];
 
