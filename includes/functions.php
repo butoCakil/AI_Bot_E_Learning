@@ -173,4 +173,111 @@ function set_session_siswa(array $user): void {
     $_SESSION['nomor_wa'] = $user['nomor_wa'];
     $_SESSION['role']     = 'siswa';
 }
+
+// ── Ambil pengaturan ─────────────────────────────────────────────
+function get_pengaturan(string $kunci, $default = null) {
+    $pdo  = db();
+    $stmt = $pdo->prepare("SELECT nilai FROM pengaturan WHERE kunci = ?");
+    $stmt->execute([$kunci]);
+    $row = $stmt->fetch();
+    return $row ? $row['nilai'] : $default;
+}
+
+// ── Set pengaturan ───────────────────────────────────────────────
+function set_pengaturan(string $kunci, $nilai): void {
+    $pdo  = db();
+    $stmt = $pdo->prepare("
+        INSERT INTO pengaturan (kunci, nilai)
+        VALUES (?, ?)
+        ON DUPLICATE KEY UPDATE nilai = VALUES(nilai)
+    ");
+    $stmt->execute([$kunci, $nilai]);
+}
+
+// ── Cek apakah siswa boleh akses post-test ──────────────────────
+function cek_akses_posttest(int $user_id): array {
+    // 1. Cek guru sudah aktifkan
+    $aktif = (int) get_pengaturan('posttest_aktif', 0);
+    if (!$aktif) {
+        return ['boleh' => false, 'alasan' => 'Guru belum membuka akses post-test.'];
+    }
+
+    // 2. Cek durasi waktu
+    $tgl_mulai = get_pengaturan('posttest_mulai');
+    $durasi    = (int) get_pengaturan('posttest_durasi_hari', 21);
+    if ($tgl_mulai) {
+        $selisih_hari = (int) floor((time() - strtotime($tgl_mulai)) / 86400);
+        if ($selisih_hari < $durasi) {
+            $sisa = $durasi - $selisih_hari;
+            return ['boleh' => false, 'alasan' => "Post-test bisa diakses $sisa hari lagi (setelah $durasi hari pembelajaran)."];
+        }
+    }
+
+    // 3. Cek progress materi siswa
+    $min_persen = (int) get_pengaturan('min_materi_persen', 100);
+    $profil     = get_profil_siswa($user_id);
+    if (!$profil) {
+        return ['boleh' => false, 'alasan' => 'Kamu belum mengerjakan pre-test.'];
+    }
+
+    $pdo    = db();
+    $topik_list = ['dioda', 'transistor', 'catu_daya'];
+    $total_harus = 0;
+    $total_dibuka = 0;
+
+    foreach ($topik_list as $topik) {
+        $stmt = $pdo->prepare("
+            SELECT urutan_content FROM adaptation_rules
+            WHERE profil_gabungan = ? AND topik = ?
+        ");
+        $stmt->execute([$profil['profil_gabungan'], $topik]);
+        $row = $stmt->fetch();
+        if ($row) {
+            $ids = array_unique(json_decode($row['urutan_content'], true));
+            $total_harus += count($ids);
+        }
+
+        $stmt2 = $pdo->prepare("
+            SELECT COUNT(DISTINCT content_id) FROM activity_log
+            WHERE user_id = ? AND tipe = 'buka_materi' AND topik = ?
+        ");
+        $stmt2->execute([$user_id, $topik]);
+        $total_dibuka += (int) $stmt2->fetchColumn();
+    }
+
+    $persen_progress = $total_harus > 0
+        ? round(($total_dibuka / $total_harus) * 100)
+        : 0;
+
+    if ($persen_progress < $min_persen) {
+        return [
+            'boleh'  => false,
+            'alasan' => "Kamu baru menyelesaikan $persen_progress% materi. Selesaikan semua materi terlebih dahulu."
+        ];
+    }
+
+    // 4. Cek sudah pernah post-test
+    $stmt = $pdo->prepare("SELECT id FROM post_test_results WHERE user_id = ? LIMIT 1");
+    $stmt->execute([$user_id]);
+    if ($stmt->fetch()) {
+        return ['boleh' => false, 'alasan' => 'Kamu sudah mengerjakan post-test.', 'sudah_selesai' => true];
+    }
+
+    return ['boleh' => true, 'alasan' => ''];
+}
+
+// ── Hitung N-Gain ────────────────────────────────────────────────
+function hitung_ngain(int $skor_pre, int $skor_post, int $skor_maks = 12): array {
+    if ($skor_maks - $skor_pre === 0) {
+        return ['ngain' => 1.0, 'kategori' => 'Tinggi'];
+    }
+    $ngain = ($skor_post - $skor_pre) / ($skor_maks - $skor_pre);
+    $ngain = round($ngain, 4);
+
+    if ($ngain > 0.7)       $kategori = 'Tinggi';
+    elseif ($ngain >= 0.3)  $kategori = 'Sedang';
+    else                    $kategori = 'Rendah';
+
+    return ['ngain' => $ngain, 'kategori' => $kategori];
+}
 ?>

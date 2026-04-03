@@ -6,6 +6,8 @@ require_once 'includes/functions.php';
 // Contoh akses: http://103.67.78.4/dashboard_guru.php?token=smkbansari2024
 define('GURU_TOKEN', 'smkbansari2024');
 
+$pdo = db();
+
 // Handler tambah siswa
 $pesan_akun = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi'])) {
@@ -20,9 +22,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi'])) {
         $pesan_akun = $result['status'] === 'ok'
             ? "✓ Akun berhasil dibuat."
             : "✗ " . $result['message'];
+    } elseif ($_POST['aksi'] === 'reset_password' && !empty($_POST['reset_id'])) {
+        $id = (int) $_POST['reset_id'];
+        $new_password = trim($_POST['new_password'] ?? '');
+        if ($new_password) {
+            $hash = password_hash($new_password, PASSWORD_DEFAULT);
+            $pdo->prepare("UPDATE users SET password_hash = ? WHERE id = ?")->execute([$hash, $id]);
+            $pesan_akun = '✓ Password berhasil direset.';
+        } else {
+            $pesan_akun = '✗ Password baru tidak boleh kosong.';
+        }
+    } elseif ($_POST['aksi'] === 'reset_password' && !empty($_POST['reset_id'])) {
+        $id = (int) $_POST['reset_id'];
+        $new_password = trim($_POST['new_password'] ?? '');
+        if ($new_password) {
+            $hash = password_hash($new_password, PASSWORD_DEFAULT);
+            $pdo->prepare("UPDATE users SET password_hash = ? WHERE id = ?")->execute([$hash, $id]);
+            $pesan_akun = '✓ Password berhasil direset.';
+        } else {
+            $pesan_akun = '✗ Password baru tidak boleh kosong.';
+        }
     } elseif ($_POST['aksi'] === 'hapus' && !empty($_POST['hapus_id'])) {
         hapus_akun_siswa((int) $_POST['hapus_id']);
         $pesan_akun = "✓ Akun siswa berhasil dihapus.";
+    } elseif ($_POST['aksi'] === 'setting_posttest') {
+        $aktif = isset($_POST['posttest_aktif']) ? '1' : '0';
+        $durasi = max(1, (int) $_POST['durasi_hari']);
+        $mulai = $_POST['tgl_mulai'] ?: date('Y-m-d');
+        $min = max(1, min(100, (int) $_POST['min_persen']));
+
+        set_pengaturan('posttest_aktif', $aktif);
+        set_pengaturan('posttest_mulai', $mulai);
+        set_pengaturan('posttest_durasi_hari', $durasi);
+        set_pengaturan('min_materi_persen', $min);
+        $pesan_akun = '✓ Pengaturan post-test berhasil disimpan.';
     }
 }
 
@@ -31,7 +64,7 @@ if (($_GET['token'] ?? '') !== GURU_TOKEN) {
     die('<h2 style="font-family:sans-serif;text-align:center;margin-top:100px">Akses ditolak.</h2>');
 }
 
-$pdo = db();
+// $pdo = db();
 
 // ── Data ringkasan ──────────────────────────────────────
 $total_siswa = $pdo->query("SELECT COUNT(*) FROM users WHERE role='siswa'")->fetchColumn();
@@ -56,14 +89,16 @@ $distribusi_level = $pdo->query("
 
 // ── Daftar siswa dengan profil terbaru ─────────────────
 $siswa_list = $pdo->query("
-    SELECT u.id, u.nama, u.kelas, u.nomor_wa, u.created_at,
+    SELECT u.id, u.nis, u.nama, u.kelas, u.nomor_wa, u.created_at,
            p.profil_gabungan, p.profil_learning, p.level_kemampuan,
-           p.skor_pengetahuan, p.created_at as tgl_pretest
+           p.skor_pengetahuan, p.created_at as tgl_pretest,
+           pt.skor_pengetahuan as skor_post, pt.created_at as tgl_posttest
     FROM users u
     LEFT JOIN pre_test_results p ON p.id = (
-        SELECT id FROM pre_test_results
-        WHERE user_id = u.id
-        ORDER BY created_at DESC LIMIT 1
+        SELECT id FROM pre_test_results WHERE user_id = u.id ORDER BY created_at DESC LIMIT 1
+    )
+    LEFT JOIN post_test_results pt ON pt.id = (
+        SELECT id FROM post_test_results WHERE user_id = u.id ORDER BY created_at DESC LIMIT 1
     )
     WHERE u.role = 'siswa'
     ORDER BY u.created_at DESC
@@ -456,6 +491,80 @@ $warna_profil = [
             </div>
         </div>
 
+        <!-- PANEL PENGATURAN POST-TEST -->
+        <?php
+        $pt_aktif = get_pengaturan('posttest_aktif', '0');
+        $pt_mulai = get_pengaturan('posttest_mulai', date('Y-m-d'));
+        $pt_durasi = get_pengaturan('posttest_durasi_hari', '21');
+        $pt_min = get_pengaturan('min_materi_persen', '100');
+        ?>
+        <div class="card" style="margin-bottom:24px;border-left:4px solid #27ae60">
+            <div class="section-title">Pengaturan Post-Test</div>
+            <form method="POST"
+                style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;align-items:end">
+                <input type="hidden" name="aksi" value="setting_posttest">
+
+                <div>
+                    <label style="font-size:12px;font-weight:600;color:#444;display:block;margin-bottom:8px">
+                        Status Post-Test
+                    </label>
+                    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:14px">
+                        <input type="checkbox" name="posttest_aktif" value="1" <?= $pt_aktif === '1' ? 'checked' : '' ?>>
+                        Aktifkan akses post-test
+                    </label>
+                </div>
+
+                <div>
+                    <label style="font-size:12px;font-weight:600;color:#444;display:block;margin-bottom:4px">
+                        Tanggal Mulai Pembelajaran
+                    </label>
+                    <input type="date" name="tgl_mulai" value="<?= htmlspecialchars($pt_mulai ?? date('Y-m-d')) ?>"
+                        style="width:100%;padding:9px 12px;border:2px solid #e0e0e0;border-radius:8px;font-size:13px;outline:none">
+                </div>
+
+                <div>
+                    <label style="font-size:12px;font-weight:600;color:#444;display:block;margin-bottom:4px">
+                        Durasi Pembelajaran (hari)
+                    </label>
+                    <input type="number" name="durasi_hari" value="<?= htmlspecialchars($pt_durasi) ?>" min="1"
+                        max="180"
+                        style="width:100%;padding:9px 12px;border:2px solid #e0e0e0;border-radius:8px;font-size:13px;outline:none">
+                </div>
+
+                <div>
+                    <label style="font-size:12px;font-weight:600;color:#444;display:block;margin-bottom:4px">
+                        Min. Progress Materi (%)
+                    </label>
+                    <input type="number" name="min_persen" value="<?= htmlspecialchars($pt_min) ?>" min="1" max="100"
+                        style="width:100%;padding:9px 12px;border:2px solid #e0e0e0;border-radius:8px;font-size:13px;outline:none">
+                </div>
+
+                <div>
+                    <button type="submit"
+                        style="width:100%;padding:10px;background:#27ae60;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">
+                        Simpan Pengaturan
+                    </button>
+                </div>
+            </form>
+
+            <div
+                style="margin-top:14px;padding:12px;background:#f8f9fa;border-radius:8px;font-size:12px;color:#666;line-height:1.8">
+                <strong>Status saat ini:</strong>
+                Post-test <strong>
+                    <?= $pt_aktif === '1' ? '✓ AKTIF' : '✗ NONAKTIF' ?>
+                </strong>
+                · Mulai: <strong>
+                    <?= $pt_mulai ? date('d/m/Y', strtotime($pt_mulai)) : '-' ?>
+                </strong>
+                · Durasi: <strong>
+                    <?= $pt_durasi ?> hari
+                </strong>
+                · Min. progress: <strong>
+                    <?= $pt_min ?>%
+                </strong>
+            </div>
+        </div>
+
         <!-- FORM TAMBAH SISWA -->
         <div class="card" style="margin-bottom:24px">
             <div class="section-title">Tambah Akun Siswa</div>
@@ -524,12 +633,15 @@ $warna_profil = [
                         <thead>
                             <tr>
                                 <th>#</th>
+                                <th>NIS</th>
                                 <th>Nama</th>
                                 <th>Kelas</th>
                                 <th>No. WA</th>
                                 <th>Profil Belajar</th>
                                 <th>Level</th>
                                 <th>Skor</th>
+                                <th>Skor Post</th>
+                                <th>N-Gain</th>
                                 <th>Tgl Pre-Test</th>
                                 <th>Aksi</th>
                             </tr>
@@ -538,6 +650,7 @@ $warna_profil = [
                             <?php foreach ($siswa_list as $i => $s): ?>
                                 <tr>
                                     <td><?= $i + 1 ?></td>
+                                    <td><?= htmlspecialchars($s['nis'] ?? '-') ?></td>
                                     <td><strong><?= htmlspecialchars($s['nama']) ?></strong></td>
                                     <td><?= htmlspecialchars($s['kelas'] ?? '-') ?></td>
                                     <td><?= htmlspecialchars($s['nomor_wa'] ?? '-') ?></td>
@@ -568,10 +681,42 @@ $warna_profil = [
                                             <span style="color:#aaa">-</span>
                                         <?php endif; ?>
                                     </td>
+                                    <td>
+                                        <?php if ($s['skor_post'] !== null): ?>
+                                            <strong>
+                                                <?= $s['skor_post'] ?>
+                                            </strong>/12
+                                        <?php else: ?>
+                                            <span style="color:#aaa;font-size:12px">-</span>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td>
+                                        <?php if ($s['skor_post'] !== null && $s['skor_pengetahuan'] !== null):
+                                            $ng = hitung_ngain((int) $s['skor_pengetahuan'], (int) $s['skor_post']);
+                                            $c = $ng['ngain'] > 0.7 ? '#27ae60' : ($ng['ngain'] >= 0.3 ? '#2980b9' : '#e74c3c');
+                                            ?>
+                                            <span class="badge" style="background:<?= $c ?>">
+                                                <?= number_format($ng['ngain'], 2) ?> —
+                                                <?= $ng['kategori'] ?>
+                                            </span>
+                                        <?php else: ?>
+                                            <span style="color:#aaa;font-size:12px">-</span>
+                                        <?php endif; ?>
+                                    </td>
                                     <td style="font-size:12px;color:#888">
                                         <?= $s['tgl_pretest'] ? date('d/m/Y H:i', strtotime($s['tgl_pretest'])) : '-' ?>
                                     </td>
-                                    <td>
+                                    <td style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+                                        <form method="POST" style="display:flex;gap:4px;align-items:center">
+                                            <input type="hidden" name="aksi" value="reset_password">
+                                            <input type="hidden" name="reset_id" value="<?= $s['id'] ?>">
+                                            <input type="text" name="new_password" placeholder="Password baru"
+                                                style="padding:4px 8px;border:1px solid #ddd;border-radius:6px;font-size:11px;width:100px">
+                                            <button type="submit"
+                                                style="padding:4px 8px;background:#2980b9;color:#fff;border:none;border-radius:6px;font-size:11px;cursor:pointer">
+                                                Reset
+                                            </button>
+                                        </form>
                                         <form method="POST"
                                             onsubmit="return confirm('Hapus akun <?= htmlspecialchars(addslashes($s['nama'])) ?>?')">
                                             <input type="hidden" name="aksi" value="hapus">
