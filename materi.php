@@ -130,6 +130,30 @@ if ($is_evaluasi && $konten_aktif) {
 
 // Halaman finish
 $is_finish = isset($_GET['finish']);
+
+// Konten yang sudah selesai dibaca (tombol next diklik)
+$stmt_dibuka = $pdo->prepare("
+    SELECT DISTINCT content_id 
+    FROM activity_log 
+    WHERE user_id = ? AND tipe = 'selesai_materi'
+");
+$stmt_dibuka->execute([$user_id]);
+$konten_dibuka = array_column($stmt_dibuka->fetchAll(), 'content_id');
+
+// Evaluasi yang sudah dikerjakan (kirim jawaban)
+$stmt_done = $pdo->prepare("
+    SELECT DISTINCT content_id 
+    FROM activity_log 
+    WHERE user_id = ? AND tipe = 'jawab_quiz'
+");
+$stmt_done->execute([$user_id]);
+$evaluasi_selesai = array_column($stmt_done->fetchAll(), 'content_id');
+
+// Timer: aktif jika konten biasa dan belum pernah diselesaikan
+$pakai_timer = false;
+if ($konten_aktif && !$is_evaluasi) {
+    $pakai_timer = !in_array($konten_id_aktif, $konten_dibuka);
+}
 ?>
 <!DOCTYPE html>
 <html lang="id">
@@ -332,9 +356,7 @@ $is_finish = isset($_GET['finish']);
             height: 100%;
             background: #4ecdc4;
             border-radius: 10px;
-            width:
-                <?= $progress ?>
-                %;
+            width: <?= $progress ?>%;
             transition: width 0.4s ease;
         }
 
@@ -599,7 +621,11 @@ $is_finish = isset($_GET['finish']);
                             class="<?= $k['id'] == $konten_id_aktif ? 'aktif' : '' ?>">
                             <span class="tipe-badge tipe-<?= $k['tipe'] ?>"><?= strtoupper($k['tipe']) ?></span>
                             <span style="flex:1"><?= htmlspecialchars($k['judul']) ?></span>
-                            <?php if ($k['wajib']): ?>
+                            <?php if ($k['tipe'] === 'evaluasi' && in_array($k['id'], $evaluasi_selesai)): ?>
+                                <span title="Sudah dikerjakan" style="color:#27ae60;font-size:13px;font-weight:700">✓</span>
+                            <?php elseif ($k['tipe'] !== 'evaluasi' && in_array($k['id'], $konten_dibuka)): ?>
+                                <span title="Sudah dibaca" style="color:#27ae60;font-size:13px;font-weight:700">✓</span>
+                            <?php elseif ($k['wajib']): ?>
                                 <span class="wajib-icon" title="Wajib dibaca">●</span>
                             <?php endif; ?>
                         </a>
@@ -682,16 +708,31 @@ $is_finish = isset($_GET['finish']);
                     <?php endif; ?>
 
                     <?php if ($next_id): ?>
-                        <!-- Masih ada konten berikutnya di topik ini -->
-                        <a href="materi.php?topik=<?= $topik_aktif ?>&konten=<?= $next_id ?>"
-                            class="btn btn-primary">Selanjutnya →</a>
+                        <?php if ($pakai_timer): ?>
+                            <a href="materi.php?topik=<?= $topik_aktif ?>&konten=<?= $next_id ?>"
+                                class="btn btn-disabled" id="btn-next" data-href="materi.php?topik=<?= $topik_aktif ?>&konten=<?= $next_id ?>">
+                                Selanjutnya (45s) →</a>
+                        <?php else: ?>
+                            <a href="materi.php?topik=<?= $topik_aktif ?>&konten=<?= $next_id ?>"
+                                class="btn btn-primary">Selanjutnya →</a>
+                        <?php endif; ?>
                     <?php elseif ($next_topik): ?>
-                        <!-- Konten habis, masih ada topik berikutnya -->
-                        <a href="materi.php?topik=<?= urlencode($next_topik) ?>"
-                            class="btn btn-primary">Topik Berikutnya →</a>
+                        <?php if ($pakai_timer): ?>
+                            <a href="materi.php?topik=<?= urlencode($next_topik) ?>"
+                                class="btn btn-disabled" id="btn-next" data-href="materi.php?topik=<?= urlencode($next_topik) ?>">
+                                Topik Berikutnya (45s) →</a>
+                        <?php else: ?>
+                            <a href="materi.php?topik=<?= urlencode($next_topik) ?>"
+                                class="btn btn-primary">Topik Berikutnya →</a>
+                        <?php endif; ?>
                     <?php else: ?>
-                        <!-- Topik terakhir, konten habis → Finish -->
-                        <a href="materi.php?finish=1" class="btn btn-success">🏁 Selesai Semua Materi</a>
+                        <?php if ($pakai_timer): ?>
+                            <a href="materi.php?finish=1"
+                                class="btn btn-disabled" id="btn-next" data-href="materi.php?finish=1">
+                                🏁 Selesai (45s)</a>
+                        <?php else: ?>
+                            <a href="materi.php?finish=1" class="btn btn-success">🏁 Selesai Semua Materi</a>
+                        <?php endif; ?>
                     <?php endif; ?>
                 </div>
 
@@ -703,6 +744,47 @@ $is_finish = isset($_GET['finish']);
         </div>
 
     </div>
+
+    <?php if ($pakai_timer): ?>
+    <script>
+    (function() {
+        var btn = document.getElementById('btn-next');
+        if (!btn) return;
+
+        var durasi     = 45;
+        var sisa       = durasi;
+        var href       = btn.getAttribute('data-href');
+        var label      = btn.textContent.trim().replace(/\s*\(\d+s\)\s*→?\s*/, '').trim();
+        var btnClass   = '<?= ($next_id === null && $next_topik === null) ? "btn-success" : "btn-primary" ?>';
+        var contentId  = <?= $konten_id_aktif ?>;
+        var topik      = '<?= $topik_aktif ?>';
+
+        var interval = setInterval(function() {
+            sisa--;
+            if (sisa <= 0) {
+                clearInterval(interval);
+
+                // Catat selesai_materi via AJAX
+                var fd = new FormData();
+                fd.append('content_id', contentId);
+                fd.append('topik', topik);
+                fetch('/api/selesai_materi.php', { method: 'POST', body: fd });
+
+                // Aktifkan tombol
+                btn.textContent = label + ' →';
+                btn.classList.remove('btn-disabled');
+                btn.classList.add(btnClass);
+                btn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    window.location.href = href;
+                });
+            } else {
+                btn.textContent = label + ' (' + sisa + 's) →';
+            }
+        }, 1000);
+    })();
+    </script>
+    <?php endif; ?>
 </body>
 
 </html>
