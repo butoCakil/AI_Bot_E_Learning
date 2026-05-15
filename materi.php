@@ -154,6 +154,16 @@ $pakai_timer = false;
 if ($konten_aktif && !$is_evaluasi) {
     $pakai_timer = !in_array($konten_id_aktif, $konten_dibuka);
 }
+
+// Cek jobsheet submission
+$is_jobsheet = $konten_aktif && $konten_aktif['tipe'] === 'jobsheet' && $konten_aktif['perlu_upload'];
+$jobsheet_uploaded = false;
+if ($is_jobsheet) {
+    $stmt_js = $pdo->prepare("SELECT id, file_original_name, nilai FROM jobsheet_submissions WHERE user_id = ? AND content_id = ?");
+    $stmt_js->execute([$user_id, $konten_id_aktif]);
+    $jobsheet_submission = $stmt_js->fetch();
+    $jobsheet_uploaded = (bool) $jobsheet_submission;
+}
 ?>
 <!DOCTYPE html>
 <html lang="id">
@@ -691,6 +701,41 @@ if ($konten_aktif && !$is_evaluasi) {
                         <div class="content-body">
                             <?= $konten_aktif['isi'] ?>
                         </div>
+
+                        <?php if ($is_jobsheet): ?>
+                        <div class="jobsheet-upload-box" id="upload-box">
+                            <div style="font-weight:600;margin-bottom:8px;color:#0f3460">
+                                📎 Upload Hasil Pengukuran
+                            </div>
+                            <?php if ($jobsheet_uploaded): ?>
+                                <div class="upload-status uploaded" id="upload-status">
+                                    ✅ File terupload: <strong><?= htmlspecialchars($jobsheet_submission['file_original_name']) ?></strong>
+                                    <?php if ($jobsheet_submission['nilai'] !== null): ?>
+                                        &nbsp;|&nbsp; Nilai: <strong><?= $jobsheet_submission['nilai'] ?></strong>
+                                    <?php endif; ?>
+                                </div>
+                                <div style="margin-top:8px;font-size:13px;color:#888">Upload ulang jika ingin mengganti file.</div>
+                            <?php else: ?>
+                                <div class="upload-status" id="upload-status" style="color:#e67e22">
+                                    ⚠️ Belum upload — jobsheet belum dianggap selesai
+                                </div>
+                            <?php endif; ?>
+                            <div style="margin-top:12px">
+                                <input type="file" id="file-jobsheet" accept=".jpg,.jpeg,.png,.pdf,.doc,.docx" style="display:none">
+                                <button class="btn btn-outline" onclick="document.getElementById('file-jobsheet').click()">
+                                    📁 Pilih File
+                                </button>
+                                <span id="file-label" style="margin-left:10px;font-size:13px;color:#555"></span>
+                            </div>
+                            <div style="margin-top:8px">
+                                <button class="btn btn-primary" id="btn-upload" style="display:none" onclick="uploadJobsheet()">
+                                    ⬆️ Upload Sekarang
+                                </button>
+                            </div>
+                            <div id="upload-msg" style="margin-top:8px;font-size:13px"></div>
+                        </div>
+                        <?php endif; ?>
+
                     <?php endif; ?>
                 </div>
 
@@ -745,13 +790,76 @@ if ($konten_aktif && !$is_evaluasi) {
 
     </div>
 
+    <style>
+    .jobsheet-upload-box {
+        background: #f8f9ff;
+        border: 2px dashed #c0c8e8;
+        border-radius: 10px;
+        padding: 20px 24px;
+        margin-top: 24px;
+    }
+    .upload-status.uploaded { color: #27ae60; font-size: 14px; }
+    .upload-status { font-size: 14px; }
+    </style>
+
+    <script>
+    function uploadJobsheet() {
+        var fileInput = document.getElementById('file-jobsheet');
+        var file = fileInput.files[0];
+        if (!file) return;
+
+        var btn = document.getElementById('btn-upload');
+        var msg = document.getElementById('upload-msg');
+        btn.disabled = true;
+        btn.textContent = 'Mengupload...';
+        msg.textContent = '';
+
+        var fd = new FormData();
+        fd.append('file', file);
+        fd.append('content_id', <?= $konten_id_aktif ?>);
+        fd.append('topik', '<?= $topik_aktif ?>');
+
+        fetch('/api/upload_jobsheet.php', { method: 'POST', body: fd })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.ok) {
+                    document.getElementById('upload-status').className = 'upload-status uploaded';
+                    document.getElementById('upload-status').innerHTML = '✅ File terupload: <strong>' + data.filename + '</strong>';
+                    msg.style.color = '#27ae60';
+                    msg.textContent = 'Upload berhasil!';
+                    btn.textContent = '✅ Terupload';
+                } else {
+                    msg.style.color = '#e74c3c';
+                    msg.textContent = '❌ ' + (data.msg || 'Upload gagal');
+                    btn.disabled = false;
+                    btn.textContent = '⬆️ Upload Sekarang';
+                }
+            })
+            .catch(function() {
+                msg.style.color = '#e74c3c';
+                msg.textContent = '❌ Koneksi gagal, coba lagi';
+                btn.disabled = false;
+                btn.textContent = '⬆️ Upload Sekarang';
+            });
+    }
+
+    document.getElementById('file-jobsheet') && document.getElementById('file-jobsheet').addEventListener('change', function() {
+        var label = document.getElementById('file-label');
+        var btn   = document.getElementById('btn-upload');
+        if (this.files[0]) {
+            label.textContent = this.files[0].name;
+            btn.style.display = 'inline-block';
+        }
+    });
+    </script>
+
     <?php if ($pakai_timer): ?>
     <script>
     (function() {
         var btn = document.getElementById('btn-next');
         if (!btn) return;
 
-        var durasi     = 45;
+        var durasi     = 35;
         var sisa       = durasi;
         var href       = btn.getAttribute('data-href');
         var label      = btn.textContent.trim().replace(/\s*\(\d+s\)\s*→?\s*/, '').trim();
