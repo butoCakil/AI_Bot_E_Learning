@@ -608,7 +608,7 @@ tr:hover td { background: #fafbff; }
     $jobsheets = $pdo->query("SELECT id, topik, judul, perlu_upload FROM content WHERE tipe = 'jobsheet' ORDER BY topik")->fetchAll();
     ?>
     <div class="card">
-        <div class="card-title">⚙️ Pengaturan Upload Jobsheet</div>
+        <div class="card-title">⚙️ Pengaturan Upload Jobsheet <a href="kelola_konten.php" class="btn btn-primary btn-sm" style="font-size:12px;padding:5px 14px">📝 Kelola Konten</a></div>
         <p style="font-size:13px;color:#666;margin-bottom:16px">Aktifkan tombol upload pada konten jobsheet yang memerlukan pengumpulan hasil pengukuran dari siswa.</p>
         <div class="table-wrap">
             <table>
