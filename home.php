@@ -319,13 +319,7 @@ body { font-family: 'Segoe UI', sans-serif; background: #f0f2f5; min-height: 100
 <body>
 
 <!-- TOPBAR -->
-<div class="topbar">
-    <div class="topbar-brand">AdaptLearn PRE <span>Penerapan Rangkaian Elektronika</span></div>
-    <div class="topbar-right">
-        <span class="topbar-nama">👤 <?= htmlspecialchars($_SESSION['nama']) ?></span>
-        <a href="logout.php" class="topbar-logout">Keluar</a>
-    </div>
-</div>
+<?php $topbar_aktif="beranda"; include __DIR__ . "/includes/topbar_siswa.php"; ?>
 
 <!-- BREADCRUMB -->
 <div class="breadcrumb">

@@ -508,14 +508,7 @@ $topik_label = [
 
 <body>
 
-    <div class="topbar">
-        <div class="topbar-left">AdaptLearn PRE</div>
-        <nav class="topbar-nav">
-            <a href="materi.php">Materi</a>
-            <a href="profil.php" class="aktif">Profil</a>
-            <a href="logout.php">Keluar</a>
-        </nav>
-    </div>
+<?php $topbar_aktif="profil"; include __DIR__ . "/includes/topbar_siswa.php"; ?>
 
     <div class="container">
 

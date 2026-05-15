@@ -230,11 +230,13 @@ $bagian_label = $soal['bagian'] === 'pengetahuan'
 </style>
 </head>
 <body>
+<?php $topbar_aktif="materi"; include __DIR__ . "/includes/topbar_siswa.php"; ?>
 
 <div class="header">
   <div class="header-top">
     <span><?= htmlspecialchars($_SESSION['nama']) ?> — <?= htmlspecialchars($_SESSION['kelas']) ?></span>
     <span>Soal <?= $no_sekarang + 1 ?> / <?= $total ?></span>
+    <a href="#" onclick="return konfirmasiKeluar()" style="color:rgba(255,255,255,0.6);font-size:12px;text-decoration:none">✕ Keluar</a>
   </div>
   <div class="progress-bar">
     <div class="progress-fill"></div>
@@ -266,5 +268,13 @@ $bagian_label = $soal['bagian'] === 'pengetahuan'
   </form>
 </div>
 
+<script>
+function konfirmasiKeluar() {
+    if (confirm("Yakin ingin keluar? Jawaban yang sudah diisi tidak akan tersimpan.")) {
+        window.location.href = "home.php";
+    }
+    return false;
+}
+</script>
 </body>
 </html>
