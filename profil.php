@@ -56,7 +56,7 @@ $progress_topik = array_column($progress_topik->fetchAll(), 'dibuka', 'topik');
 
 $total_konten_topik = [];
 if ($profil) {
-    foreach (['dioda', 'transistor', 'catu_daya'] as $topik) {
+    foreach (array_keys(get_topik_list()) as $topik) {
         $stmt = $pdo->prepare("
             SELECT urutan_content FROM adaptation_rules
             WHERE profil_gabungan = ? AND topik = ?
@@ -127,7 +127,7 @@ $progress_topik = array_column($progress_topik->fetchAll(), 'dibuka', 'topik');
 // Total konten per topik dari adaptation_rules
 $total_konten_topik = [];
 if ($profil) {
-    foreach (['dioda', 'transistor', 'catu_daya'] as $topik) {
+    foreach (array_keys(get_topik_list()) as $topik) {
         $stmt = $pdo->prepare("
             SELECT urutan_content FROM adaptation_rules
             WHERE profil_gabungan = ? AND topik = ?
@@ -158,11 +158,7 @@ $warna_level = [
     'intermediate' => '#2980b9',
     'advanced' => '#27ae60',
 ];
-$topik_label = [
-    'dioda' => 'Dioda',
-    'transistor' => 'Transistor',
-    'catu_daya' => 'Catu Daya',
-];
+$topik_label = get_topik_list();
 ?>
 <!DOCTYPE html>
 <html lang="id">

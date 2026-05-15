@@ -130,7 +130,7 @@ if ($edit_id) {
     $edit = $stmt->fetch();
 }
 
-$topik_list = ['dioda' => 'Dioda', 'transistor' => 'Transistor', 'catu_daya' => 'Catu Daya'];
+$topik_list = get_topik_list();
 $tipe_list  = ['teori' => 'Teori', 'langkah' => 'Langkah Kerja', 'jobsheet' => 'Jobsheet', 'evaluasi' => 'Evaluasi', 'tantangan' => 'Tantangan'];
 ?>
 <!DOCTYPE html>

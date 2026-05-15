@@ -18,11 +18,7 @@ $hasil_soal = $hasil['hasil_soal'];
 $profil_gabungan = $hasil['profil_gabungan'];
 $nama = $_SESSION['nama'];
 
-$topik_label = [
-    'dioda' => 'Dioda',
-    'transistor' => 'Transistor',
-    'catu_daya' => 'Catu Daya',
-];
+$topik_label = get_topik_list();
 
 $warna = $persentase >= 80 ? '#27ae60' : ($persentase >= 60 ? '#2980b9' : '#e74c3c');
 $pesan = $persentase >= 80

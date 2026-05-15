@@ -34,17 +34,13 @@ $warna_level = [
     'advanced' => '#27ae60',
 ];
 
-// Topik yang tersedia
-$topik_list = [
-    'dioda' => 'Dioda',
-    'transistor' => 'Transistor',
-    'catu_daya' => 'Catu Daya',
-];
+// Topik dari database
+$topik_list = get_topik_list();
 
 // Topik aktif
-$topik_aktif = $_GET['topik'] ?? 'dioda';
+$topik_aktif = $_GET['topik'] ?? array_key_first($topik_list);
 if (!array_key_exists($topik_aktif, $topik_list)) {
-    $topik_aktif = 'dioda';
+    $topik_aktif = array_key_first($topik_list);
 }
 
 // Ambil adaptation rule untuk profil + topik ini
@@ -614,10 +610,15 @@ if ($is_jobsheet) {
             <div class="sidebar-card">
                 <div class="sidebar-header">Topik</div>
                 <nav class="topik-nav">
-                    <?php foreach ($topik_list as $slug => $label): ?>
-                        <a href="materi.php?topik=<?= $slug ?>" class="<?= $slug === $topik_aktif ? 'aktif' : '' ?>">
-                            <?= htmlspecialchars($label) ?>
+                    <?php foreach (get_topik_tree() as $parent): ?>
+                        <a href="materi.php?topik=<?= $parent['slug'] ?>" class="<?= $parent['slug'] === $topik_aktif ? 'aktif' : '' ?>">
+                            <?= htmlspecialchars($parent['nama']) ?>
                         </a>
+                        <?php foreach ($parent['children'] as $child): ?>
+                        <a href="materi.php?topik=<?= $child['slug'] ?>" class="sub-topik <?= $child['slug'] === $topik_aktif ? 'aktif' : '' ?>" style="padding-left:20px;font-size:13px">
+                            ↳ <?= htmlspecialchars($child['nama']) ?>
+                        </a>
+                        <?php endforeach; ?>
                     <?php endforeach; ?>
                 </nav>
             </div>
@@ -713,7 +714,23 @@ if ($is_jobsheet) {
                     <?php else: ?>
                         <!-- Tampilan konten biasa -->
                         <div class="content-body">
-                            <?= $konten_aktif['isi'] ?>
+                            <?php if (!empty($konten_aktif['file_path'])): ?>
+                                <?php $ext = strtolower(pathinfo($konten_aktif['file_path'], PATHINFO_EXTENSION)); ?>
+                                <?php if ($ext === 'pdf'): ?>
+                                    <div style="width:100%;height:800px;border:none">
+                                        <embed src="/<?= htmlspecialchars($konten_aktif['file_path']) ?>" type="application/pdf" width="100%" height="100%">
+                                        <p style="margin-top:12px;font-size:13px;color:#666">
+                                            Tidak bisa tampil? <a href="/<?= htmlspecialchars($konten_aktif['file_path']) ?>" target="_blank">Download PDF</a>
+                                        </p>
+                                    </div>
+                                <?php else: ?>
+                                    <a href="/<?= htmlspecialchars($konten_aktif['file_path']) ?>" target="_blank" class="btn btn-primary">
+                                        📄 Download File: <?= htmlspecialchars(basename($konten_aktif['file_path'])) ?>
+                                    </a>
+                                <?php endif; ?>
+                            <?php else: ?>
+                                <?= $konten_aktif['isi'] ?>
+                            <?php endif; ?>
                         </div>
 
                         <?php if ($is_jobsheet): ?>

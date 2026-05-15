@@ -32,11 +32,7 @@ $warna_level = [
 ];
 
 // Hitung progress per topik
-$topik_list = [
-    'dioda'      => 'Dioda',
-    'transistor' => 'Transistor',
-    'catu_daya'  => 'Catu Daya',
-];
+$topik_list = get_topik_list();
 $progress_topik = [];
 $total_semua = 0;
 $selesai_semua = 0;
@@ -355,13 +351,11 @@ body { font-family: 'Segoe UI', sans-serif; background: #f0f2f5; min-height: 100
         <div class="section-title">📍 Alur Belajarmu</div>
         <div class="alur-steps">
             <?php
-            $steps = [
-                ['label' => 'Pre-Test', 'done' => true],
-                ['label' => 'Materi Dioda', 'done' => $progress_topik['dioda']['persen'] >= 100],
-                ['label' => 'Materi Transistor', 'done' => $progress_topik['transistor']['persen'] >= 100],
-                ['label' => 'Materi Catu Daya', 'done' => $progress_topik['catu_daya']['persen'] >= 100],
-                ['label' => 'Post-Test', 'done' => isset($akses_posttest['sudah_selesai'])],
-            ];
+            $steps = [['label' => 'Pre-Test', 'done' => true]];
+            foreach ($topik_list as $slug => $nama) {
+                $steps[] = ['label' => 'Materi ' . $nama, 'done' => ($progress_topik[$slug]['persen'] ?? 0) >= 100];
+            }
+            $steps[] = ['label' => 'Post-Test', 'done' => isset($akses_posttest['sudah_selesai'])];
             $aktif_idx = 0;
             foreach ($steps as $i => $s) {
                 if (!$s['done']) { $aktif_idx = $i; break; }

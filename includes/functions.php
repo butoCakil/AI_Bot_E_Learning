@@ -221,7 +221,7 @@ function cek_akses_posttest(int $user_id): array {
     }
 
     $pdo    = db();
-    $topik_list = ['dioda', 'transistor', 'catu_daya'];
+    $topik_list = array_keys(get_topik_list());
     $total_harus = 0;
     $total_dibuka = 0;
 
@@ -280,4 +280,101 @@ function hitung_ngain(int $skor_pre, int $skor_post, int $skor_maks = 12): array
 
     return ['ngain' => $ngain, 'kategori' => $kategori];
 }
-?>
+
+// ── Topik Functions ──────────────────────────────────────
+
+/**
+ * Ambil semua topik aktif sebagai flat array [slug => nama]
+ * Untuk kompatibilitas dengan kode lama yang pakai $topik_list
+ */
+function get_topik_list(): array {
+    $pdo = db();
+    $stmt = $pdo->query("SELECT slug, nama FROM topik WHERE aktif = 1 ORDER BY urutan, id");
+    return array_column($stmt->fetchAll(), 'nama', 'slug');
+}
+
+/**
+ * Ambil topik sebagai tree hierarki
+ * Return: array of parent topik, masing-masing punya key 'children'
+ */
+function get_topik_tree(): array {
+    $pdo = db();
+    $all = $pdo->query("SELECT * FROM topik WHERE aktif = 1 ORDER BY urutan, id")->fetchAll();
+
+    $tree    = [];
+    $indexed = [];
+
+    foreach ($all as $t) {
+        $t['children'] = [];
+        $indexed[$t['id']] = $t;
+    }
+
+    foreach ($indexed as $id => $t) {
+        if ($t['parent_id'] === null) {
+            $tree[] = &$indexed[$id];
+        } else {
+            $indexed[$t['parent_id']]['children'][] = &$indexed[$id];
+        }
+    }
+
+    return $tree;
+}
+
+/**
+ * Ambil hanya topik level atas (parent_id NULL)
+ */
+function get_topik_utama(): array {
+    $pdo = db();
+    $stmt = $pdo->query("SELECT * FROM topik WHERE parent_id IS NULL AND aktif = 1 ORDER BY urutan, id");
+    return $stmt->fetchAll();
+}
+
+/**
+ * Ambil sub-topik dari sebuah parent slug
+ */
+function get_sub_topik(string $parent_slug): array {
+    $pdo = db();
+    $stmt = $pdo->prepare("
+        SELECT t.* FROM topik t
+        JOIN topik p ON t.parent_id = p.id
+        WHERE p.slug = ? AND t.aktif = 1
+        ORDER BY t.urutan, t.id
+    ");
+    $stmt->execute([$parent_slug]);
+    return $stmt->fetchAll();
+}
+
+/**
+ * Ambil topik by slug
+ */
+function get_topik_by_slug(string $slug): ?array {
+    $pdo = db();
+    $stmt = $pdo->prepare("SELECT * FROM topik WHERE slug = ? AND aktif = 1 LIMIT 1");
+    $stmt->execute([$slug]);
+    return $stmt->fetch() ?: null;
+}
+
+/**
+ * Cek apakah slug adalah sub-topik
+ */
+function is_sub_topik(string $slug): bool {
+    $pdo = db();
+    $stmt = $pdo->prepare("SELECT parent_id FROM topik WHERE slug = ? LIMIT 1");
+    $stmt->execute([$slug]);
+    $row = $stmt->fetch();
+    return $row && $row['parent_id'] !== null;
+}
+
+/**
+ * Ambil parent topik dari sebuah slug sub-topik
+ */
+function get_parent_topik(string $slug): ?array {
+    $pdo = db();
+    $stmt = $pdo->prepare("
+        SELECT p.* FROM topik t
+        JOIN topik p ON t.parent_id = p.id
+        WHERE t.slug = ? LIMIT 1
+    ");
+    $stmt->execute([$slug]);
+    return $stmt->fetch() ?: null;
+}
