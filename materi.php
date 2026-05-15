@@ -611,9 +611,15 @@ if ($is_jobsheet) {
                 <div class="sidebar-header">Topik</div>
                 <nav class="topik-nav">
                     <?php foreach (get_topik_tree() as $parent): ?>
-                        <a href="materi.php?topik=<?= $parent['slug'] ?>" class="<?= $parent['slug'] === $topik_aktif ? 'aktif' : '' ?>">
-                            <?= htmlspecialchars($parent['nama']) ?>
-                        </a>
+                        <?php if (!empty($parent['children'])): ?>
+                            <span class="topik-parent-label" style="display:block;padding:8px 12px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:#888;cursor:default">
+                                <?= htmlspecialchars($parent['nama']) ?>
+                            </span>
+                        <?php else: ?>
+                            <a href="materi.php?topik=<?= $parent['slug'] ?>" class="<?= $parent['slug'] === $topik_aktif ? 'aktif' : '' ?>">
+                                <?= htmlspecialchars($parent['nama']) ?>
+                            </a>
+                        <?php endif; ?>
                         <?php foreach ($parent['children'] as $child): ?>
                         <a href="materi.php?topik=<?= $child['slug'] ?>" class="sub-topik <?= $child['slug'] === $topik_aktif ? 'aktif' : '' ?>" style="padding-left:20px;font-size:13px">
                             ↳ <?= htmlspecialchars($child['nama']) ?>
