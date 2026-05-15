@@ -1,10 +1,10 @@
 <?php
 require_once dirname(__DIR__) . '/config/config.php';
 
-$token = $_POST['token'] ?? '';
-if ($token !== 'smkbansari2024') {
+session_start();
+if (empty($_SESSION['role']) || $_SESSION['role'] !== 'guru') {
     http_response_code(403);
-    header('Location: /dashboard_guru.php?token=smkbansari2024');
+    header('Location: /login_guru.php');
     exit;
 }
 

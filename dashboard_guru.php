@@ -2,9 +2,7 @@
 require_once 'config/config.php';
 require_once 'includes/functions.php';
 
-// Akses sederhana via token di URL
-// Contoh akses: http://103.67.78.4/dashboard_guru.php?token=smkbansari2024
-define('GURU_TOKEN', 'smkbansari2024');
+session_start();
 
 $pdo = db();
 
@@ -59,9 +57,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi'])) {
     }
 }
 
-if (($_GET['token'] ?? '') !== GURU_TOKEN) {
-    http_response_code(403);
-    die('<h2 style="font-family:sans-serif;text-align:center;margin-top:100px">Akses ditolak.</h2>');
+if (empty($_SESSION['role']) || $_SESSION['role'] !== 'guru') {
+    header('Location: login_guru.php');
+    exit;
 }
 
 // $pdo = db();
@@ -337,7 +335,10 @@ tr:hover td { background: #fafbff; }
 <!-- TOPBAR -->
 <div class="topbar">
     <div class="topbar-brand">Dashboard Guru <span>AdaptLearn PRE — SMK Negeri Bansari</span></div>
-    <div class="topbar-right">Penerapan Rangkaian Elektronika</div>
+    <div class="topbar-right" style="display:flex;align-items:center;gap:16px">
+        <span><?= htmlspecialchars($_SESSION['guru_nama'] ?? 'Guru') ?></span>
+        <a href="logout.php" style="color:rgba(255,255,255,0.6);font-size:12px;text-decoration:none">Keluar</a>
+    </div>
 </div>
 
 <!-- TAB NAVIGATION -->
@@ -582,7 +583,7 @@ tr:hover td { background: #fafbff; }
                     <td style="font-size:12px;color:#666"><?= date('d/m/Y H:i', strtotime($sub['created_at'])) ?></td>
                     <td>
                         <form method="POST" action="api/nilai_jobsheet.php" style="display:flex;gap:6px;align-items:center">
-                            <input type="hidden" name="token" value="smkbansari2024">
+                            
                             <input type="hidden" name="submission_id" value="<?= $sub['id'] ?>">
                             <input type="number" name="nilai" min="0" max="100" step="0.5" value="<?= $sub['nilai'] ?? '' ?>" style="width:60px;padding:4px;border:1px solid #ccc;border-radius:4px;font-size:13px">
                             <button type="submit" class="btn btn-sm btn-primary">Simpan</button>
@@ -619,7 +620,7 @@ tr:hover td { background: #fafbff; }
                     <td><?= htmlspecialchars($js['judul']) ?></td>
                     <td style="text-align:center">
                         <form method="POST" action="api/toggle_upload_jobsheet.php" style="display:inline">
-                            <input type="hidden" name="token" value="smkbansari2024">
+                            
                             <input type="hidden" name="content_id" value="<?= $js['id'] ?>">
                             <input type="hidden" name="nilai" value="<?= $js['perlu_upload'] ? 0 : 1 ?>">
                             <button type="submit" class="btn btn-sm <?= $js['perlu_upload'] ? 'btn-success' : 'btn-outline' ?>">

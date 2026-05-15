@@ -48,7 +48,7 @@ if ($posttest) {
 $progress_topik = $pdo->prepare("
     SELECT topik, COUNT(DISTINCT content_id) as dibuka
     FROM activity_log
-    WHERE user_id = ? AND tipe = 'buka_materi' AND topik IS NOT NULL
+    WHERE user_id = ? AND tipe = 'selesai_materi' AND topik IS NOT NULL
     GROUP BY topik
 ");
 $progress_topik->execute([$user_id]);
@@ -118,7 +118,7 @@ $progress_topik = $pdo->prepare("
     SELECT topik,
            COUNT(DISTINCT content_id) as dibuka
     FROM activity_log
-    WHERE user_id = ? AND tipe = 'buka_materi' AND topik IS NOT NULL
+    WHERE user_id = ? AND tipe = 'selesai_materi' AND topik IS NOT NULL
     GROUP BY topik
 ");
 $progress_topik->execute([$user_id]);
