@@ -239,18 +239,49 @@ body { font-family: 'Segoe UI', sans-serif; background: #f0f2f5; min-height: 100
             </div>
             <?php endif; ?>
 
-            <?php foreach ($topik_list as $slug => $nama): ?>
-            <div class="konten-group">
-                <div class="konten-group-title"><?= $nama ?></div>
-                <?php foreach ($konten_list as $k): ?>
-                <?php if ($k['topik'] !== $slug) continue; ?>
-                <a href="kelola_konten.php?edit=<?= $k['id'] ?>" class="konten-item <?= $edit_id == $k['id'] ? 'aktif' : '' ?>" style="text-decoration:none">
-                    <span class="tipe-badge tipe-<?= $k['tipe'] ?>"><?= strtoupper($k['tipe']) ?></span>
-                    <span class="konten-item-judul"><?= htmlspecialchars(mb_strimwidth($k['judul'],0,30,'...')) ?></span>
-                    <span class="konten-item-status"><?= $k['aktif'] ? '' : '⊘' ?></span>
-                </a>
+            <?php foreach (get_topik_tree() as $parent):
+                // Kumpulkan semua slug yang perlu ditampilkan untuk parent ini
+                $slugs = [];
+                if (empty($parent['children'])) {
+                    $slugs[] = $parent['slug'];
+                } else {
+                    foreach ($parent['children'] as $child) $slugs[] = $child['slug'];
+                }
+                // Cek apakah ada konten di slug-slug ini
+                $ada_konten = false;
+                foreach ($konten_list as $k) {
+                    if (in_array($k['topik'], $slugs)) { $ada_konten = true; break; }
+                }
+            ?>
+            <?php if (!empty($parent['children'])): ?>
+                <?php foreach ($parent['children'] as $child):
+                    $child_konten = array_filter($konten_list, fn($k) => $k['topik'] === $child['slug']);
+                    if (empty($child_konten)) continue;
+                ?>
+                <div class="konten-group">
+                    <div class="konten-group-title"><?= htmlspecialchars($parent['nama']) ?> › <?= htmlspecialchars($child['nama']) ?></div>
+                    <?php foreach ($child_konten as $k): ?>
+                    <a href="kelola_konten.php?edit=<?= $k['id'] ?>" class="konten-item <?= $edit_id == $k['id'] ? 'aktif' : '' ?>" style="text-decoration:none">
+                        <span class="tipe-badge tipe-<?= $k['tipe'] ?>"><?= strtoupper($k['tipe']) ?></span>
+                        <span class="konten-item-judul"><?= htmlspecialchars(mb_strimwidth($k['judul'],0,30,'...')) ?></span>
+                        <span class="konten-item-status"><?= $k['aktif'] ? '' : '⊘' ?></span>
+                    </a>
+                    <?php endforeach; ?>
+                </div>
                 <?php endforeach; ?>
-            </div>
+            <?php elseif ($ada_konten): ?>
+                <div class="konten-group">
+                    <div class="konten-group-title"><?= htmlspecialchars($parent['nama']) ?></div>
+                    <?php foreach ($konten_list as $k): ?>
+                    <?php if ($k['topik'] !== $parent['slug']) continue; ?>
+                    <a href="kelola_konten.php?edit=<?= $k['id'] ?>" class="konten-item <?= $edit_id == $k['id'] ? 'aktif' : '' ?>" style="text-decoration:none">
+                        <span class="tipe-badge tipe-<?= $k['tipe'] ?>"><?= strtoupper($k['tipe']) ?></span>
+                        <span class="konten-item-judul"><?= htmlspecialchars(mb_strimwidth($k['judul'],0,30,'...')) ?></span>
+                        <span class="konten-item-status"><?= $k['aktif'] ? '' : '⊘' ?></span>
+                    </a>
+                    <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
             <?php endforeach; ?>
         </div>
     </div>
@@ -292,11 +323,57 @@ body { font-family: 'Segoe UI', sans-serif; background: #f0f2f5; min-height: 100
                 <div class="form-row">
                     <div class="form-group">
                         <label>Topik</label>
-                        <select name="topik" required>
-                            <?php foreach ($topik_list as $s => $n): ?>
-                            <option value="<?= $s ?>" <?= ($edit['topik'] ?? '') === $s ? 'selected' : '' ?>><?= $n ?></option>
+                        <?php $topik_tree = get_topik_tree(); ?>
+                        <select name="topik" id="select-topik" onchange="handleTopikChange(this.value)" required>
+                            <option value="">— Pilih Topik —</option>
+                            <?php foreach ($topik_tree as $parent): ?>
+                                <?php if (empty($parent['children'])): ?>
+                                    <option value="<?= $parent['slug'] ?>" <?= ($edit['topik'] ?? '') === $parent['slug'] ? 'selected' : '' ?>>
+                                        <?= htmlspecialchars($parent['nama']) ?>
+                                    </option>
+                                <?php else: ?>
+                                    <optgroup label="<?= htmlspecialchars($parent['nama']) ?>">
+                                        <?php foreach ($parent['children'] as $child): ?>
+                                        <option value="<?= $child['slug'] ?>" <?= ($edit['topik'] ?? '') === $child['slug'] ? 'selected' : '' ?>>
+                                            <?= htmlspecialchars($child['nama']) ?>
+                                        </option>
+                                        <?php endforeach; ?>
+                                    </optgroup>
+                                <?php endif; ?>
                             <?php endforeach; ?>
+                            <option value="__baru_parent__">➕ Tambah Topik Baru (Parent)</option>
+                            <option value="__baru_sub__">➕ Tambah Sub-Topik Baru</option>
                         </select>
+
+                        <!-- Form tambah topik baru (parent) -->
+                        <div id="wrap-topik-baru-parent" style="display:none;margin-top:10px;background:#f8f9ff;border:2px solid #c0c8e8;border-radius:8px;padding:14px">
+                            <div style="font-size:12px;font-weight:700;color:#0f3460;margin-bottom:8px">➕ Topik Baru (Parent)</div>
+                            <input type="text" id="nama-topik-baru" placeholder="Nama topik (contoh: Catu Daya Lanjutan)"
+                                style="width:100%;padding:8px 10px;border:2px solid #e0e0e0;border-radius:6px;font-size:13px;margin-bottom:8px">
+                            <input type="text" id="slug-topik-baru" placeholder="Slug otomatis dari nama..."
+                                style="width:100%;padding:8px 10px;border:2px solid #e0e0e0;border-radius:6px;font-size:13px;margin-bottom:8px;color:#888" readonly>
+                            <button type="button" class="btn btn-primary btn-sm" onclick="simpanTopikBaru('parent')">Simpan & Pilih</button>
+                            <button type="button" class="btn btn-outline btn-sm" onclick="batalTopikBaru()" style="margin-left:6px">Batal</button>
+                            <div id="msg-topik-baru-parent" style="font-size:12px;margin-top:6px"></div>
+                        </div>
+
+                        <!-- Form tambah sub-topik baru -->
+                        <div id="wrap-topik-baru-sub" style="display:none;margin-top:10px;background:#f8f9ff;border:2px solid #c0c8e8;border-radius:8px;padding:14px">
+                            <div style="font-size:12px;font-weight:700;color:#0f3460;margin-bottom:8px">➕ Sub-Topik Baru</div>
+                            <div style="font-size:12px;color:#555;margin-bottom:6px">Parent (topik utama):</div>
+                            <select id="parent-sub-baru" style="width:100%;padding:8px 10px;border:2px solid #e0e0e0;border-radius:6px;font-size:13px;margin-bottom:8px">
+                                <?php foreach ($topik_tree as $parent): ?>
+                                <option value="<?= $parent['id'] ?>"><?= htmlspecialchars($parent['nama']) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                            <input type="text" id="nama-sub-baru" placeholder="Nama sub-topik (contoh: Pengukuran Dioda)"
+                                style="width:100%;padding:8px 10px;border:2px solid #e0e0e0;border-radius:6px;font-size:13px;margin-bottom:8px">
+                            <input type="text" id="slug-sub-baru" placeholder="Slug otomatis dari nama..."
+                                style="width:100%;padding:8px 10px;border:2px solid #e0e0e0;border-radius:6px;font-size:13px;margin-bottom:8px;color:#888" readonly>
+                            <button type="button" class="btn btn-primary btn-sm" onclick="simpanTopikBaru('sub')">Simpan & Pilih</button>
+                            <button type="button" class="btn btn-outline btn-sm" onclick="batalTopikBaru()" style="margin-left:6px">Batal</button>
+                            <div id="msg-topik-baru-sub" style="font-size:12px;margin-top:6px"></div>
+                        </div>
                     </div>
                     <div class="form-group">
                         <label>Tipe</label>
@@ -318,7 +395,7 @@ body { font-family: 'Segoe UI', sans-serif; background: #f0f2f5; min-height: 100
                             Konten aktif
                         </label>
                     </div>
-                    <div class="form-group" style="display:flex;align-items:flex-end;padding-bottom:2px" id="wrap-perlu-upload" <?= ($edit['tipe'] ?? '') !== 'jobsheet' ? 'style="display:none"' : '' ?>>
+                    <div class="form-group" style="display:flex;align-items:flex-end;padding-bottom:2px" id="wrap-perlu-upload">
                         <label class="checkbox-row">
                             <input type="checkbox" name="perlu_upload" <?= ($edit['perlu_upload'] ?? 0) ? 'checked' : '' ?>>
                             Perlu upload siswa
@@ -428,7 +505,6 @@ function handleTipeChange(tipe) {
     document.getElementById('wrap-mode-toggle').style.display = isEval ? 'none' : '';
     document.getElementById('wrap-evaluasi').style.display    = isEval ? '' : 'none';
     document.getElementById('wrap-editor').style.display      = isEval ? 'none' : (document.getElementById('input-mode').value === 'editor' ? '' : 'none');
-    document.getElementById('wrap-perlu-upload').style.display = isJob ? '' : 'none';
     if (isEval) {
         document.getElementById('input-mode').value = 'evaluasi';
     }
@@ -481,6 +557,97 @@ function submitForm() {
 
 // Init tipe change untuk perlu_upload visibility
 handleTipeChange(document.getElementById('select-tipe')?.value || 'teori');
+function handleTopikChange(val) {
+    document.getElementById('wrap-topik-baru-parent').style.display = 'none';
+    document.getElementById('wrap-topik-baru-sub').style.display = 'none';
+    if (val === '__baru_parent__') {
+        document.getElementById('wrap-topik-baru-parent').style.display = 'block';
+        document.getElementById('select-topik').value = '';
+    } else if (val === '__baru_sub__') {
+        document.getElementById('wrap-topik-baru-sub').style.display = 'block';
+        document.getElementById('select-topik').value = '';
+    }
+}
+
+function toSlug(str) {
+    return str.toLowerCase()
+        .replace(/[^a-z0-9\s_]/g, '')
+        .trim()
+        .replace(/\s+/g, '_');
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    var namaParent = document.getElementById('nama-topik-baru');
+    if (namaParent) namaParent.addEventListener('input', function() {
+        document.getElementById('slug-topik-baru').value = toSlug(this.value);
+    });
+    var namaSub = document.getElementById('nama-sub-baru');
+    if (namaSub) namaSub.addEventListener('input', function() {
+        document.getElementById('slug-sub-baru').value = toSlug(this.value);
+    });
+});
+
+function batalTopikBaru() {
+    document.getElementById('wrap-topik-baru-parent').style.display = 'none';
+    document.getElementById('wrap-topik-baru-sub').style.display = 'none';
+    document.getElementById('select-topik').value = '';
+}
+
+function simpanTopikBaru(mode) {
+    var nama, slug, parentId, msgEl;
+    if (mode === 'parent') {
+        nama   = document.getElementById('nama-topik-baru').value.trim();
+        slug   = document.getElementById('slug-topik-baru').value.trim();
+        parentId = null;
+        msgEl  = document.getElementById('msg-topik-baru-parent');
+    } else {
+        nama     = document.getElementById('nama-sub-baru').value.trim();
+        slug     = document.getElementById('slug-sub-baru').value.trim();
+        parentId = document.getElementById('parent-sub-baru').value;
+        msgEl    = document.getElementById('msg-topik-baru-sub');
+    }
+    if (!nama || !slug) {
+        msgEl.style.color = '#e74c3c';
+        msgEl.textContent = 'Nama dan slug wajib diisi.';
+        return;
+    }
+    msgEl.style.color = '#888';
+    msgEl.textContent = 'Menyimpan...';
+
+    var fd = new FormData();
+    fd.append('aksi', 'tambah_topik');
+    fd.append('nama', nama);
+    fd.append('slug', slug);
+    if (parentId) fd.append('parent_id', parentId);
+
+    fetch('api/kelola_topik.php', { method: 'POST', body: fd })
+        .then(r => r.json())
+        .then(data => {
+            if (data.ok) {
+                // Tambah option baru ke select
+                var sel = document.getElementById('select-topik');
+                var opt = document.createElement('option');
+                opt.value = data.slug;
+                opt.text  = data.nama;
+                // Sisipkan sebelum opsi "Tambah..."
+                var idxParent = Array.from(sel.options).findIndex(o => o.value === '__baru_parent__');
+                sel.insertBefore(opt, sel.options[idxParent]);
+                sel.value = data.slug;
+                // Sembunyikan form
+                document.getElementById('wrap-topik-baru-parent').style.display = 'none';
+                document.getElementById('wrap-topik-baru-sub').style.display = 'none';
+                msgEl.textContent = '';
+            } else {
+                msgEl.style.color = '#e74c3c';
+                msgEl.textContent = data.msg || 'Gagal menyimpan topik.';
+            }
+        })
+        .catch(() => {
+            msgEl.style.color = '#e74c3c';
+            msgEl.textContent = 'Koneksi gagal.';
+        });
+}
+
 </script>
 
 </body>
