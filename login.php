@@ -5,7 +5,7 @@ require_once 'includes/functions.php';
 
 // Jika sudah login, redirect
 if (!empty($_SESSION['user_id']) && ($_SESSION['role'] ?? '') === 'siswa') {
-    header('Location: cek_pretest.php');
+    header('Location: home.php');
     exit;
 }
 
@@ -22,7 +22,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($user) {
             set_session_siswa($user);
             log_aktivitas($user['id'], 'login', null, null, ['nis' => $nis]);
-            header('Location: cek_pretest.php');
+            header('Location: home.php');
             exit;
         } else {
             $error = 'NIS atau password salah.';

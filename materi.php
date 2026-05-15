@@ -580,14 +580,28 @@ if ($is_jobsheet) {
 
     <!-- TOP BAR -->
     <div class="topbar">
-        <div class="topbar-left">AdaptLearn PRE</div>
-        <div class="topbar-right" style="display:flex;align-items:center;gap:12px">
-            <span
-                class="badge-profil"><?= htmlspecialchars($label_profil[$profil_learning] ?? $profil_learning) ?></span>
-            <span class="badge-level"><?= htmlspecialchars($label_level[$level] ?? $level) ?></span>
-            <a href="profil.php" style="color:rgba(255,255,255,0.85);font-size:13px;text-decoration:none">
-                <?= htmlspecialchars($_SESSION['nama']) ?>
+            <div class="topbar-left">
+                <a href="home.php" style="color:#fff;text-decoration:none;font-weight:700">AdaptLearn PRE</a>
+                <span style="opacity:0.4;margin:0 8px">/</span>
+                <span style="opacity:0.7;font-size:13px">Materi</span>
+            </div>
+            <div class="topbar-right" style="display:flex;align-items:center;gap:12px">
+                <span class="badge-profil"><?= htmlspecialchars($label_profil[$profil_learning] ?? $profil_learning) ?></span>
+                <span class="badge-level"><?= htmlspecialchars($label_level[$level] ?? $level) ?></span>
+                <a href="profil.php" style="color:rgba(255,255,255,0.85);font-size:13px;text-decoration:none">
+                    <?= htmlspecialchars($_SESSION['nama']) ?>
+                </a>
+                <!-- <a href="home.php" style="color:rgba(255,255,255,0.6);font-size:12px;text-decoration:none">🏠 Beranda</a> -->
+            </div>
+        </div>
+        <div style="background:#fff;border-bottom:1px solid #e8e8e8;padding:10px 24px;font-size:13px;color:#888">
+            <a href="home.php" style="color:#0f3460;text-decoration:none;font-weight:600">Beranda</a>
+            <span style="margin:0 6px">›</span>
+            <a href="materi.php?topik=<?= $topik_aktif ?>" style="color:#0f3460;text-decoration:none">
+                <?= htmlspecialchars($topik_list[$topik_aktif] ?? $topik_aktif) ?>
             </a>
+            <span style="margin:0 6px">›</span>
+            <span style="color:#333"><?= htmlspecialchars($konten_aktif['judul'] ?? '') ?></span>
         </div>
     </div>
 
