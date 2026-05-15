@@ -200,7 +200,6 @@ body {
 </head>
 <body>
 
-<?php $topbar_aktif="materi"; include __DIR__ . "/includes/topbar_siswa.php"; ?>
 <div class="header">
     <div class="header-top">
         <span>Post-Test — <?= htmlspecialchars($_SESSION['nama']) ?></span>
