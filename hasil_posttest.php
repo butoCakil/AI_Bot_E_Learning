@@ -214,6 +214,7 @@ body {
         </div>
 
         <a href="profil.php" class="btn">Kembali ke Profil</a>
+        <a href="home.php" class="btn btn-outline" style="margin-top:10px">🏠 Beranda</a>
     </div>
 
     <!-- Pembahasan -->

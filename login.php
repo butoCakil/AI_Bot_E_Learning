@@ -131,6 +131,7 @@ input:focus { border-color: #0f3460; }
         <button type="submit" class="btn">Masuk →</button>
     </form>
     <p class="hint">Hubungi guru jika belum memiliki akun.</p>
+    <p style="text-align:center;margin-top:12px"><a href="landing.php" style="font-size:13px;color:#888;text-decoration:none">← Kembali ke halaman utama</a></p>
 </div>
 </body>
 </html>

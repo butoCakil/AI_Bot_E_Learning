@@ -220,8 +220,8 @@ $skor    = $hasil['skor'];
     </div>
   </div>
 
-  <a href="materi.php" class="btn">Mulai Belajar →</a>
-  <a href="index.php" class="btn btn-outline" style="margin-top:10px">Ulangi Pre-Test</a>
+  <a href="home.php" class="btn">Mulai Belajar →</a>
+  <a href="pretest.php" class="btn btn-outline" style="margin-top:10px">Ulangi Pre-Test</a>
 </div>
 </body>
 </html>
