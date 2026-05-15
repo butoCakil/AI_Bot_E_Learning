@@ -479,7 +479,7 @@ tr:hover td { background: #fafbff; }
 
     <!-- DAFTAR SISWA -->
     <div class="card">
-        <div class="card-title">👥 Daftar Siswa (<?= count($siswa_list) ?>)</div>
+        <div class="card-title">👥 Daftar Siswa (<?= count($siswa_list) ?>) <a href="api/ekspor_ngain.php" class="btn btn-success btn-sm" style="font-size:12px;padding:5px 14px">⬇ Ekspor N-Gain CSV</a></div>
         <div class="table-wrap">
             <table>
                 <thead>
