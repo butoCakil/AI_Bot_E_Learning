@@ -605,40 +605,88 @@ tr:hover td { background: #fafbff; }
 ══════════════════════════════════════════ -->
 <div id="tab-materi" class="tab-panel">
     <?php
-    $jobsheets = $pdo->query("SELECT id, topik, judul, perlu_upload FROM content WHERE tipe = 'jobsheet' ORDER BY topik")->fetchAll();
+    $topik_tree_dash = get_topik_tree();
+    $total_konten_semua = $pdo->query("SELECT COUNT(*) FROM content WHERE aktif=1")->fetchColumn();
+    $total_topik_semua  = $pdo->query("SELECT COUNT(*) FROM topik WHERE aktif=1")->fetchColumn();
     ?>
+
+    <!-- TOMBOL AKSI -->
+    <div style="display:flex;gap:16px;margin-bottom:24px">
+        <a href="kelola_konten.php" class="btn btn-primary" style="font-size:15px;padding:12px 24px">
+            Kelola Konten Materi
+        </a>
+        <a href="kelola_topik.php" class="btn btn-outline" style="font-size:15px;padding:12px 24px">
+            Kelola Topik &amp; Sub-Topik
+        </a>
+    </div>
+
+    <!-- RINGKASAN STAT -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px">
+        <div class="card" style="margin-bottom:0;border-left:4px solid #0f3460">
+            <div class="stat-label">Total Topik Aktif</div>
+            <div class="stat-value"><?= $total_topik_semua ?></div>
+            <div class="stat-desc">termasuk sub-topik</div>
+        </div>
+        <div class="card" style="margin-bottom:0;border-left:4px solid #27ae60">
+            <div class="stat-label">Total Konten Aktif</div>
+            <div class="stat-value"><?= $total_konten_semua ?></div>
+            <div class="stat-desc">di semua topik</div>
+        </div>
+    </div>
+
+    <!-- RINGKASAN PER TOPIK -->
     <div class="card">
-        <div class="card-title">⚙️ Pengaturan Upload Jobsheet <a href="kelola_konten.php" class="btn btn-primary btn-sm" style="font-size:12px;padding:5px 14px">📝 Kelola Konten</a></div>
-        <p style="font-size:13px;color:#666;margin-bottom:16px">Aktifkan tombol upload pada konten jobsheet yang memerlukan pengumpulan hasil pengukuran dari siswa.</p>
+        <div class="card-title">Ringkasan Konten per Topik</div>
         <div class="table-wrap">
             <table>
-                <thead><tr><th>Topik</th><th>Judul Jobsheet</th><th style="text-align:center">Perlu Upload?</th><th style="text-align:center">Preview</th></tr></thead>
+                <thead><tr><th>Topik</th><th style="text-align:center">Teori</th><th style="text-align:center">Langkah</th><th style="text-align:center">Jobsheet</th><th style="text-align:center">Evaluasi</th><th style="text-align:center">Tantangan</th><th style="text-align:center">Total</th><th style="text-align:center">Aksi</th></tr></thead>
                 <tbody>
-                <?php foreach ($jobsheets as $js): ?>
+                <?php
+                function hitungKonten($pdo, $slug) {
+                    $stmt = $pdo->prepare("SELECT tipe, COUNT(*) as jml FROM content WHERE topik=? AND aktif=1 GROUP BY tipe");
+                    $stmt->execute([$slug]);
+                    $result = ['teori'=>0,'langkah'=>0,'jobsheet'=>0,'evaluasi'=>0,'tantangan'=>0];
+                    foreach ($stmt->fetchAll() as $r) if (isset($result[$r['tipe']])) $result[$r['tipe']] = $r['jml'];
+                    $result['total'] = array_sum($result);
+                    return $result;
+                }
+                foreach ($topik_tree_dash as $parent):
+                    if (empty($parent['children'])):
+                        $k = hitungKonten($pdo, $parent['slug']);
+                ?>
                 <tr>
-                    <td><?= htmlspecialchars(ucwords(str_replace('_',' ',$js['topik']))) ?></td>
-                    <td><?= htmlspecialchars($js['judul']) ?></td>
-                    <td style="text-align:center">
-                        <form method="POST" action="api/toggle_upload_jobsheet.php" style="display:inline">
-                            
-                            <input type="hidden" name="content_id" value="<?= $js['id'] ?>">
-                            <input type="hidden" name="nilai" value="<?= $js['perlu_upload'] ? 0 : 1 ?>">
-                            <button type="submit" class="btn btn-sm <?= $js['perlu_upload'] ? 'btn-success' : 'btn-outline' ?>">
-                                <?= $js['perlu_upload'] ? '✅ Aktif' : '⬜ Nonaktif' ?>
-                            </button>
-                        </form>
-                    </td>
-                    <td style="text-align:center">
-                        <a href="materi.php?topik=<?= $js['topik'] ?>&konten=<?= $js['id'] ?>" target="_blank" class="btn btn-sm btn-outline">👁 Lihat</a>
+                    <td><strong><?= htmlspecialchars($parent['nama']) ?></strong></td>
+                    <?php foreach (['teori','langkah','jobsheet','evaluasi','tantangan'] as $tipe): ?>
+                    <td style="text-align:center"><?= $k[$tipe] > 0 ? '<span style="color:#27ae60;font-weight:700">'.$k[$tipe].'</span>' : '<span style="color:#ddd">-</span>' ?></td>
+                    <?php endforeach; ?>
+                    <td style="text-align:center"><strong><?= $k['total'] ?></strong></td>
+                    <td style="text-align:center"><a href="kelola_konten.php" class="btn btn-sm btn-outline">Edit</a></td>
+                </tr>
+                <?php else: ?>
+                <tr style="background:#f8f9ff">
+                    <td colspan="8" style="font-size:12px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:0.8px;padding:8px 14px">
+                        <?= htmlspecialchars($parent['nama']) ?>
                     </td>
                 </tr>
+                <?php foreach ($parent['children'] as $child):
+                    $k = hitungKonten($pdo, $child['slug']);
+                ?>
+                <tr>
+                    <td style="padding-left:28px">&#8627; <?= htmlspecialchars($child['nama']) ?></td>
+                    <?php foreach (['teori','langkah','jobsheet','evaluasi','tantangan'] as $tipe): ?>
+                    <td style="text-align:center"><?= $k[$tipe] > 0 ? '<span style="color:#27ae60;font-weight:700">'.$k[$tipe].'</span>' : '<span style="color:#ddd">-</span>' ?></td>
+                    <?php endforeach; ?>
+                    <td style="text-align:center"><strong><?= $k['total'] ?></strong></td>
+                    <td style="text-align:center"><a href="kelola_konten.php" class="btn btn-sm btn-outline">Edit</a></td>
+                </tr>
+                <?php endforeach; ?>
+                <?php endif; ?>
                 <?php endforeach; ?>
                 </tbody>
             </table>
         </div>
     </div>
 </div>
-
 <!-- ══════════════════════════════════════════
      TAB 5: POST-TEST
 ══════════════════════════════════════════ -->
