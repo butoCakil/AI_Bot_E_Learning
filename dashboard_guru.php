@@ -329,6 +329,9 @@ tr:hover td { background: #fafbff; }
     .charts-row { grid-template-columns: 1fr; }
 }
 </style>
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css">
+<script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
 </head>
 <body>
 
@@ -477,79 +480,255 @@ tr:hover td { background: #fafbff; }
         </form>
     </div>
 
+    <!-- ══════════════════════════════════════════
+     SISIPKAN INI: setelah card "Tambah Akun Siswa",
+     sebelum card "Daftar Siswa" di tab-siswa
+    ══════════════════════════════════════════ -->
+
+    <!-- IMPORT EXCEL -->
+    <div class="card" style="margin-bottom:24px">
+        <div class="section-title">📥 Import Siswa dari Excel</div>
+
+        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:16px">
+            <a href="/api/template_siswa.php" target="_blank"
+            style="display:inline-block;padding:9px 18px;background:#27ae60;color:#fff;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none">
+                ⬇ Download Template Excel
+            </a>
+            <span style="font-size:12px;color:#666">
+                Download template → isi data siswa → upload di bawah
+            </span>
+        </div>
+
+        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+            <input type="file" id="file_import" accept=".xlsx,.xls"
+                style="padding:8px;border:2px solid #e0e0e0;border-radius:8px;font-size:13px;flex:1;min-width:200px">
+            <button onclick="importSiswa()"
+                    style="padding:9px 20px;background:#0f3460;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">
+                📤 Upload & Import
+            </button>
+        </div>
+
+        <div id="hasil_import" style="margin-top:14px;display:none"></div>
+    </div>
+
     <!-- DAFTAR SISWA -->
     <div class="card">
-        <div class="card-title">👥 Daftar Siswa (<?= count($siswa_list) ?>) <a href="api/ekspor_ngain.php" class="btn btn-success btn-sm" style="font-size:12px;padding:5px 14px">⬇ Ekspor N-Gain CSV</a></div>
-        <div class="table-wrap">
-            <table>
-                <thead>
-                    <tr>
-                        <th>#</th><th>NIS</th><th>Nama</th><th>Kelas</th>
-                        <th>Profil Belajar</th><th>Level</th>
-                        <th>Skor Pre</th><th>Skor Post</th><th>N-Gain</th>
-                        <th>Tgl Pre-Test</th><th>Aksi</th>
-                    </tr>
-                </thead>
-                <tbody>
-                <?php foreach ($siswa_list as $i => $s): ?>
-                <?php
-                    $ngain = null;
-                    if ($s['skor_pengetahuan'] !== null && $s['skor_post'] !== null) {
-                        $ngain = hitung_ngain((int)$s['skor_pengetahuan'], (int)$s['skor_post']);
-                    }
-                ?>
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:16px">
+            <div class="card-title" style="margin:0">👥 Daftar Siswa (<?= count($siswa_list) ?>)</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+                <select id="filter_kelas" style="padding:7px 10px;border:1.5px solid #e0e0e0;border-radius:8px;font-size:13px">
+                    <option value="">Semua Kelas</option>
+                    <?php foreach(['XI TE 1','XI TE 2','XI TE 3','XI TE 4','XII TE 1','XII TE 2','XII TE 3','XII TE 4'] as $k): ?>
+                    <option value="<?= $k ?>"><?= $k ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <select id="filter_profil" style="padding:7px 10px;border:1.5px solid #e0e0e0;border-radius:8px;font-size:13px">
+                    <option value="">Semua Profil</option>
+                    <option value="guided">Guided-Step</option>
+                    <option value="conceptual">Conceptual</option>
+                    <option value="practice">Practice-Oriented</option>
+                </select>
+                <a href="api/ekspor_ngain.php" class="btn btn-success btn-sm" style="font-size:12px;padding:6px 14px">⬇ Ekspor CSV</a>
+            </div>
+        </div>
+        <div style="overflow-x:auto">
+        <table id="tabel_siswa" style="width:100%;font-size:13px">
+            <thead>
                 <tr>
-                    <td><?= $i+1 ?></td>
-                    <td><?= htmlspecialchars($s['nis'] ?? '-') ?></td>
-                    <td><strong><?= htmlspecialchars($s['nama']) ?></strong></td>
-                    <td><?= htmlspecialchars($s['kelas'] ?? '-') ?></td>
-                    <td>
-                        <?php if ($s['profil_learning']): ?>
-                        <span class="badge" style="background:<?= $warna_profil[$s['profil_learning']] ?? '#888' ?>">
-                            <?= $label_profil[$s['profil_learning']] ?? $s['profil_learning'] ?>
-                        </span>
-                        <?php else: ?>—<?php endif; ?>
-                    </td>
-                    <td>
-                        <?php if ($s['level_kemampuan']): ?>
-                        <span class="badge" style="background:<?= $warna_level[$s['level_kemampuan']] ?? '#888' ?>">
-                            <?= $label_level[$s['level_kemampuan']] ?? $s['level_kemampuan'] ?>
-                        </span>
-                        <?php else: ?>—<?php endif; ?>
-                    </td>
-                    <td><?= $s['skor_pengetahuan'] !== null ? $s['skor_pengetahuan'].'/12' : '-' ?></td>
-                    <td><?= $s['skor_post'] !== null ? $s['skor_post'].'/12' : '-' ?></td>
-                    <td>
-                        <?php if ($ngain): ?>
-                        <span class="badge" style="background:<?= $ngain['warna'] ?>">
-                            <?= number_format($ngain['ngain'],2) ?> — <?= $ngain['kategori'] ?>
-                        </span>
-                        <?php else: ?>—<?php endif; ?>
-                    </td>
-                    <td style="font-size:12px;color:#888"><?= $s['tgl_pretest'] ? date('d/m/Y H:i', strtotime($s['tgl_pretest'])) : '-' ?></td>
-                    <td>
-                        <div style="display:flex;flex-direction:column;gap:4px">
-                            <form method="POST" style="display:flex;gap:4px">
-                                <input type="hidden" name="aksi" value="reset_password">
-                                <input type="hidden" name="reset_id" value="<?= $s['id'] ?>">
-                                <input type="text" name="new_password" placeholder="Password baru" style="width:90px;padding:4px 6px;font-size:11px;border:1px solid #ddd;border-radius:4px">
-                                <button type="submit" class="btn btn-sm btn-outline">Reset</button>
-                            </form>
-                            <form method="POST" onsubmit="return confirm('Hapus akun <?= htmlspecialchars($s['nama']) ?>?')">
-                                <input type="hidden" name="aksi" value="hapus">
-                                <input type="hidden" name="hapus_id" value="<?= $s['id'] ?>">
-                                <button type="submit" class="btn btn-sm btn-danger">Hapus</button>
-                            </form>
-                        </div>
-                    </td>
+                    <th>#</th><th>NIS</th><th>Nama</th><th>Kelas</th>
+                    <th>Profil</th><th>Level</th>
+                    <th>Skor Pre</th><th>Skor Post</th><th>N-Gain</th>
+                    <th>Tgl Pre-Test</th><th>Aksi</th>
                 </tr>
-                <?php endforeach; ?>
-                </tbody>
-            </table>
+            </thead>
+            <tbody>
+            <?php foreach ($siswa_list as $i => $s): ?>
+            <?php
+                $ngain = null;
+                if ($s['skor_pengetahuan'] !== null && $s['skor_post'] !== null) {
+                    $ngain = hitung_ngain((int)$s['skor_pengetahuan'], (int)$s['skor_post']);
+                }
+            ?>
+            <tr data-kelas="<?= htmlspecialchars($s['kelas'] ?? '') ?>" data-profil="<?= htmlspecialchars($s['profil_learning'] ?? '') ?>">
+                <td><?= $i+1 ?></td>
+                <td><?= htmlspecialchars($s['nis'] ?? '-') ?></td>
+                <td><strong><?= htmlspecialchars($s['nama']) ?></strong></td>
+                <td><?= htmlspecialchars($s['kelas'] ?? '-') ?></td>
+                <td>
+                    <?php if ($s['profil_learning']): ?>
+                    <span class="badge" style="background:<?= $warna_profil[$s['profil_learning']] ?? '#888' ?>;white-space:nowrap">
+                        <?= $label_profil[$s['profil_learning']] ?? $s['profil_learning'] ?>
+                    </span>
+                    <?php else: ?>—<?php endif; ?>
+                </td>
+                <td>
+                    <?php if ($s['level_kemampuan']): ?>
+                    <span class="badge" style="background:<?= $warna_level[$s['level_kemampuan']] ?? '#888' ?>">
+                        <?= $label_level[$s['level_kemampuan']] ?? $s['level_kemampuan'] ?>
+                    </span>
+                    <?php else: ?>—<?php endif; ?>
+                </td>
+                <td><?= $s['skor_pengetahuan'] !== null ? $s['skor_pengetahuan'].'/12' : '-' ?></td>
+                <td><?= $s['skor_post'] !== null ? $s['skor_post'].'/12' : '-' ?></td>
+                <td>
+                    <?php if ($ngain): ?>
+                    <span class="badge" style="background:<?= $ngain['warna'] ?>;white-space:nowrap">
+                        <?= number_format($ngain['ngain'],2) ?> — <?= $ngain['kategori'] ?>
+                    </span>
+                    <?php else: ?>—<?php endif; ?>
+                </td>
+                <td style="font-size:12px;color:#888;white-space:nowrap"><?= $s['tgl_pretest'] ? date('d/m/Y', strtotime($s['tgl_pretest'])) : '-' ?></td>
+                <td>
+                    <div style="display:flex;flex-direction:column;gap:4px;min-width:160px">
+                        <form method="POST" style="display:flex;gap:4px">
+                            <input type="hidden" name="aksi" value="reset_password">
+                            <input type="hidden" name="reset_id" value="<?= $s['id'] ?>">
+                            <input type="text" name="new_password" placeholder="Password baru" style="width:90px;padding:4px 6px;font-size:11px;border:1px solid #ddd;border-radius:4px">
+                            <button type="submit" class="btn btn-sm btn-outline">Reset</button>
+                        </form>
+                        <form method="POST" onsubmit="return confirm('Hapus akun <?= htmlspecialchars($s['nama']) ?>?')">
+                            <input type="hidden" name="aksi" value="hapus">
+                            <input type="hidden" name="hapus_id" value="<?= $s['id'] ?>">
+                            <button type="submit" class="btn btn-sm btn-danger">Hapus</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table>
         </div>
     </div>
 </div>
 
+<script>
+$(document).ready(function() {
+    var table = $('#tabel_siswa').DataTable({
+        pageLength: 25,
+        language: {
+            search: "Cari:",
+            lengthMenu: "Tampilkan _MENU_ siswa",
+            info: "Menampilkan _START_–_END_ dari _TOTAL_ siswa",
+            infoEmpty: "Tidak ada data",
+            zeroRecords: "Tidak ada siswa yang cocok",
+            paginate: { previous: "‹ Prev", next: "Next ›" }
+        },
+        columnDefs: [
+            { orderable: false, targets: [10] }, // kolom Aksi tidak sortable
+            { width: '30px', targets: [0] },
+            { width: '80px', targets: [1] },
+            { width: '70px', targets: [6,7] },
+        ],
+        order: [[2, 'asc']], // default sort by nama
+        rowCallback: function(row, data, displayIndex, displayIndexFull) {
+            $('td:first', row).html(displayIndexFull + 1);
+        }
+    });
+
+    // Filter kelas
+    $('#filter_kelas').on('change', function() {
+        table.column(3).search(this.value).draw();
+    });
+
+    // Filter profil
+    $('#filter_profil').on('change', function() {
+        table.column(4).search(this.value).draw();
+    });
+});
+
+// ── Import Excel dengan progress per batch ────────────────────────
+let importData = [];
+let importOffset = 0;
+const BATCH_SIZE = 20;
+
+function importSiswa() {
+    const fileInput = document.getElementById('file_import');
+    const hasilDiv  = document.getElementById('hasil_import');
+
+    if (!fileInput.files.length) {
+        hasilDiv.style.display = 'block';
+        hasilDiv.innerHTML = '<div style="padding:10px 14px;background:#fff0f0;color:#cc0000;border-radius:8px;font-size:13px;border:1px solid #ffcccc">⚠ Pilih file Excel terlebih dahulu.</div>';
+        return;
+    }
+
+    hasilDiv.style.display = 'block';
+    hasilDiv.innerHTML = '<div style="padding:10px 14px;background:#f0f4ff;color:#0f3460;border-radius:8px;font-size:13px">⏳ Membaca file Excel...</div>';
+
+    // Step 1: upload file → parse → dapat total baris
+    const formData = new FormData();
+    formData.append('file_excel', fileInput.files[0]);
+    formData.append('aksi', 'parse');
+
+    fetch('/api/import_siswa.php', { method: 'POST', body: formData })
+    .then(r => r.json())
+    .then(data => {
+        if (data.status === 'error') {
+            hasilDiv.innerHTML = `<div style="padding:10px 14px;background:#fff0f0;color:#cc0000;border-radius:8px;font-size:13px;border:1px solid #ffcccc">✗ ${data.pesan}</div>`;
+            return;
+        }
+        importData   = data.rows;
+        importOffset = 0;
+        prosesImport(hasilDiv, data.rows.length);
+    })
+    .catch(() => {
+        hasilDiv.innerHTML = '<div style="padding:10px 14px;background:#fff0f0;color:#cc0000;border-radius:8px;font-size:13px">✗ Gagal membaca file.</div>';
+    });
+}
+
+function prosesImport(hasilDiv, total) {
+    if (importOffset >= total) {
+        hasilDiv.innerHTML = hasilDiv.innerHTML; // biarkan hasil akhir tampil
+        setTimeout(() => location.reload(), 2000);
+        return;
+    }
+
+    const batch = importData.slice(importOffset, importOffset + BATCH_SIZE);
+    const pct   = Math.min(100, Math.round((importOffset / total) * 100));
+
+    hasilDiv.innerHTML = `
+        <div style="margin-bottom:8px;font-size:13px;color:#0f3460;font-weight:600">
+            Mengimpor... ${importOffset}/${total} siswa (${pct}%)
+        </div>
+        <div style="background:#e0e0e0;border-radius:20px;height:12px;overflow:hidden">
+            <div style="width:${pct}%;background:#0f3460;height:100%;border-radius:20px;transition:width 0.3s ease"></div>
+        </div>`;
+
+    fetch('/api/import_siswa.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ aksi: 'batch', rows: batch, is_last: (importOffset + BATCH_SIZE >= importData.length) })
+    })
+    .then(r => r.json())
+    .then(data => {
+        importOffset += BATCH_SIZE;
+        const pctNow = Math.min(100, Math.round((importOffset / total) * 100));
+
+        if (importOffset >= total) {
+            // Selesai
+            let html = `
+                <div style="margin-bottom:8px;font-size:13px;color:#155724;font-weight:600">Selesai! ${pctNow}%</div>
+                <div style="background:#e0e0e0;border-radius:20px;height:12px;overflow:hidden;margin-bottom:12px">
+                    <div style="width:100%;background:#27ae60;height:100%;border-radius:20px"></div>
+                </div>
+                <div style="padding:10px 14px;background:#e8f8f0;color:#155724;border-radius:8px;font-size:13px;border:1px solid #c3e6cb">
+                    ✓ Import selesai — <strong>${data.total_berhasil} siswa berhasil</strong>, <strong>${data.total_gagal} dilewati</strong>.
+                </div>`;
+            if (data.detail_gagal && data.detail_gagal.length) {
+                html += `<div style="margin-top:8px;padding:10px 14px;background:#fff8e1;border-radius:8px;font-size:12px;border:1px solid #ffe082">
+                    <strong>Detail dilewati:</strong><br>${data.detail_gagal.map(s=>'• '+s).join('<br>')}
+                </div>`;
+            }
+            hasilDiv.innerHTML = html;
+            setTimeout(() => location.reload(), 3000);
+        } else {
+            prosesImport(hasilDiv, total);
+        }
+    })
+    .catch(() => {
+        hasilDiv.innerHTML += '<br><span style="color:red;font-size:12px">✗ Error pada batch, coba lagi.</span>';
+    });
+}
+</script>
 <!-- ══════════════════════════════════════════
      TAB 3: PENILAIAN JOBSHEET
 ══════════════════════════════════════════ -->
@@ -805,6 +984,7 @@ window.addEventListener('DOMContentLoaded', function() {
     }
 });
 </script>
+
 
 </body>
 </html>
