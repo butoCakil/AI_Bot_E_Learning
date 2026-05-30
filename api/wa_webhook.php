@@ -1,5 +1,6 @@
 <?php
 require_once '../config/config.php';
+require_once '../includes/functions.php';
 
 $raw  = file_get_contents('php://input');
 $data = json_decode($raw, true);
@@ -59,40 +60,67 @@ function hapus_wa_session(PDO $pdo, string $nomor): void {
 }
 
 // ── Fungsi tanya Gemini ────────────────────────────────────────
-function tanya_groq(string $pertanyaan, array $konteks): string {
-    $system = "Kamu adalah asisten belajar AdaptLearn PRE untuk mata pelajaran Penerapan Rangkaian Elektronika (PRE) di SMK. " .
-              "Siswa bernama {$konteks['nama']}, kelas {$konteks['kelas']}, " .
-              "profil belajar: {$konteks['profil']}, level: {$konteks['level']}. " .
-              "Jawab dengan bahasa formal tapi santai, mudah dipahami siswa SMK. " .
-              "Fokus pada materi elektronika (dioda, transistor, catu daya). " .
-              "Jawaban maksimal 3 paragraf pendek. Gunakan emoji secukupnya.";
+function tanya_ai(string $pertanyaan, array $konteks, PDO $pdo): string {
+    $provider = get_pengaturan('wa_ai_provider', 'groq');
+    $model    = get_pengaturan('wa_ai_model',    'llama-3.1-8b-instant');
+    $custom   = get_pengaturan('wa_ai_prompt',   '');
 
-    $payload = json_encode([
-        'model'    => GROQ_MODEL,
-        'messages' => [
-            ['role' => 'system', 'content' => $system],
-            ['role' => 'user',   'content' => $pertanyaan],
-        ],
-        'max_tokens'  => 400,
-        'temperature' => 0.7,
-    ]);
+    $system = $custom ?: (
+        "Kamu adalah asisten belajar AdaptLearn PRE untuk mata pelajaran Penerapan Rangkaian Elektronika (PRE) di SMK. " .
+        "Siswa bernama {$konteks['nama']}, kelas {$konteks['kelas']}, " .
+        "profil belajar: {$konteks['profil']}, level: {$konteks['level']}. " .
+        "Jawab dengan bahasa formal tapi santai, mudah dipahami siswa SMK. " .
+        "Fokus pada materi elektronika (dioda, transistor, catu daya). " .
+        "Jawaban maksimal 3 paragraf pendek. Gunakan emoji secukupnya."
+    );
 
-    $ch = curl_init(GROQ_API_URL);
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_POST           => true,
-        CURLOPT_HTTPHEADER     => [
-            'Content-Type: application/json',
-            'Authorization: Bearer ' . GROQ_API_KEY,
-        ],
-        CURLOPT_POSTFIELDS => $payload,
-        CURLOPT_TIMEOUT    => 15,
-    ]);
-    $resp   = curl_exec($ch);
-    curl_close($ch);
-    $result = json_decode($resp, true);
-    return $result['choices'][0]['message']['content']
-           ?? 'Maaf, asisten AI sedang tidak tersedia. Coba lagi ya! 🙏';
+    if ($provider === 'groq') {
+        $payload = json_encode([
+            'model'       => $model,
+            'messages'    => [
+                ['role' => 'system', 'content' => $system],
+                ['role' => 'user',   'content' => $pertanyaan],
+            ],
+            'max_tokens'  => 400,
+            'temperature' => 0.7,
+        ]);
+        $ch = curl_init(GROQ_API_URL);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST           => true,
+            CURLOPT_HTTPHEADER     => [
+                'Content-Type: application/json',
+                'Authorization: Bearer ' . GROQ_API_KEY,
+            ],
+            CURLOPT_POSTFIELDS => $payload,
+            CURLOPT_TIMEOUT    => 15,
+        ]);
+        $resp   = curl_exec($ch);
+        curl_close($ch);
+        $result = json_decode($resp, true);
+        return $result['choices'][0]['message']['content']
+               ?? 'Maaf, asisten AI sedang tidak tersedia. Coba lagi ya! 🙏';
+
+    } elseif ($provider === 'gemini') {
+        $payload = json_encode([
+            'contents' => [['parts' => [['text' => $system . "\n\nPertanyaan: " . $pertanyaan]]]]
+        ]);
+        $ch = curl_init(GEMINI_API_URL . '?key=' . GEMINI_API_KEY);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST           => true,
+            CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
+            CURLOPT_POSTFIELDS     => $payload,
+            CURLOPT_TIMEOUT        => 15,
+        ]);
+        $resp   = curl_exec($ch);
+        curl_close($ch);
+        $result = json_decode($resp, true);
+        return $result['candidates'][0]['content']['parts'][0]['text']
+               ?? 'Maaf, asisten AI sedang tidak tersedia. Coba lagi ya! 🙏';
+    }
+
+    return 'Maaf, provider AI tidak dikenali. Hubungi gurumu ya! 🙏';
 }
 
 // ── Label profil & level ───────────────────────────────────────
@@ -321,7 +349,7 @@ switch ($state) {
             'profil' => $label_profil[$user['profil_learning']] ?? 'Umum',
             'level'  => $label_level[$user['level_kemampuan']] ?? 'Umum',
         ];
-        $jawaban = tanya_groq($pesan, $konteks);
+        $jawaban = tanya_ai($pesan, $konteks, $pdo);
         kirim_wa($nomor, "🤖 *Jawaban AI:*\n\n{$jawaban}\n\n_Punya pertanyaan lain? Langsung ketik! Atau ketik *batal* untuk kembali._ 😊");
         break;
 

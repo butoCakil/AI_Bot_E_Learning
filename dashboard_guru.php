@@ -54,6 +54,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi'])) {
         set_pengaturan('posttest_durasi_hari', $durasi);
         set_pengaturan('min_materi_persen', $min);
         $pesan_akun = '✓ Pengaturan post-test berhasil disimpan.';
+    } elseif ($_POST['aksi'] === 'setting_ai') {
+        set_pengaturan('wa_ai_provider', trim($_POST['wa_ai_provider'] ?? 'groq'));
+        set_pengaturan('wa_ai_model',    trim($_POST['wa_ai_model']    ?? 'llama-3.1-8b-instant'));
+        set_pengaturan('wa_ai_prompt',   trim($_POST['wa_ai_prompt']   ?? ''));
+        $pesan_akun = '✓ Pengaturan AI berhasil disimpan.';
     }
 }
 
@@ -352,6 +357,7 @@ tr:hover td { background: #fafbff; }
     <button class="tab-btn" onclick="bukaTab('materi', this)">⚙️ Pengaturan Materi</button>
     <button class="tab-btn" onclick="bukaTab('pengaturan', this)">🎯 Post-Test</button>
     <button class="tab-btn" onclick="bukaTab('aktivitas', this)">📋 Aktivitas</button>
+    <button class="tab-btn" onclick="bukaTab('wabot', this)">🤖 WA Bot & AI</button>
 </div>
 
 <div class="container">
@@ -966,6 +972,159 @@ function prosesImport(hasilDiv, total) {
 </div>
 
 </div><!-- /container -->
+
+<!-- ══════════════════════════════════════════
+     TAB 7: WA BOT & AI
+══════════════════════════════════════════ -->
+<div id="tab-wabot" class="tab-panel">
+
+    <!-- STATUS WA BOT -->
+    <div class="card">
+        <div class="card-title">📱 Status WA Bot</div>
+        <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px">
+            <div style="padding:12px 20px;background:#e8f8f0;border-radius:10px;border:1px solid #c3e6cb;flex:1;min-width:200px">
+                <div style="font-size:12px;color:#666;margin-bottom:4px">Nomor Bot</div>
+                <div style="font-weight:700;color:#155724"><?= get_pengaturan('wa_bot_nomor', '-') ?></div>
+            </div>
+            <div style="padding:12px 20px;background:#e8f4fd;border-radius:10px;border:1px solid #b8daff;flex:1;min-width:200px">
+                <div style="font-size:12px;color:#666;margin-bottom:4px">Model AI Aktif</div>
+                <div style="font-weight:700;color:#0f3460"><?= get_pengaturan('wa_ai_model', 'llama-3.1-8b-instant') ?></div>
+            </div>
+            <div style="padding:12px 20px;background:#fff8e1;border-radius:10px;border:1px solid #ffe082;flex:1;min-width:200px">
+                <div style="font-size:12px;color:#666;margin-bottom:4px">Provider</div>
+                <div style="font-weight:700;color:#e67e22"><?= strtoupper(get_pengaturan('wa_ai_provider', 'groq')) ?></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- PENGATURAN MODEL AI -->
+    <div class="card">
+        <div class="card-title">🤖 Pilih Model AI</div>
+
+        <?php
+        $model_list = [
+            'groq' => [
+                'label' => 'Groq',
+                'models' => [
+                    ['id' => 'llama-3.1-8b-instant',                    'nama' => 'Llama 3.1 8B Instant',        'gratis' => true,  'desc' => 'Cepat, ringan, cocok untuk pertanyaan sederhana'],
+                    ['id' => 'llama-3.3-70b-versatile',                  'nama' => 'Llama 3.3 70B Versatile',     'gratis' => true,  'desc' => 'Lebih pintar, jawaban lebih detail'],
+                    ['id' => 'meta-llama/llama-4-scout-17b-16e-instruct','nama' => 'Llama 4 Scout 17B',           'gratis' => true,  'desc' => 'Model terbaru Meta, seimbang'],
+                    ['id' => 'qwen/qwen3-32b',                           'nama' => 'Qwen3 32B',                   'gratis' => true,  'desc' => 'Model Alibaba, kuat untuk sains & teknik'],
+                    ['id' => 'groq/compound',                            'nama' => 'Groq Compound',               'gratis' => false, 'desc' => 'Model compound Groq, berbayar'],
+                ],
+            ],
+            'gemini' => [
+                'label' => 'Google Gemini',
+                'models' => [
+                    ['id' => 'gemini-2.0-flash',      'nama' => 'Gemini 2.0 Flash',      'gratis' => false, 'desc' => 'Google Gemini terbaru, berbayar'],
+                    ['id' => 'gemini-2.0-flash-lite',  'nama' => 'Gemini 2.0 Flash Lite', 'gratis' => false, 'desc' => 'Lebih hemat, cocok untuk volume tinggi'],
+                ],
+            ],
+        ];
+        $provider_aktif = get_pengaturan('wa_ai_provider', 'groq');
+        $model_aktif    = get_pengaturan('wa_ai_model', 'llama-3.1-8b-instant');
+        ?>
+
+        <form method="POST" id="form_ai_setting">
+            <input type="hidden" name="aksi" value="setting_ai">
+
+            <!-- Pilih Provider -->
+            <div style="margin-bottom:20px">
+                <label style="font-size:13px;font-weight:600;color:#444;display:block;margin-bottom:8px">Provider AI</label>
+                <div style="display:flex;gap:10px;flex-wrap:wrap">
+                    <?php foreach ($model_list as $pkey => $pdata): ?>
+                    <label style="display:flex;align-items:center;gap:8px;padding:10px 16px;border:2px solid <?= $provider_aktif === $pkey ? '#0f3460' : '#e0e0e0' ?>;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600">
+                        <input type="radio" name="wa_ai_provider" value="<?= $pkey ?>" <?= $provider_aktif === $pkey ? 'checked' : '' ?> onchange="gantiProvider('<?= $pkey ?>')">
+                        <?= $pdata['label'] ?>
+                    </label>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+
+            <!-- Daftar Model per Provider -->
+            <?php foreach ($model_list as $pkey => $pdata): ?>
+            <div id="models_<?= $pkey ?>" style="display:<?= $provider_aktif === $pkey ? 'block' : 'none' ?>;margin-bottom:20px">
+                <label style="font-size:13px;font-weight:600;color:#444;display:block;margin-bottom:8px">Model</label>
+                <div style="display:flex;flex-direction:column;gap:8px">
+                    <?php foreach ($pdata['models'] as $m): ?>
+                    <label style="display:flex;align-items:center;gap:12px;padding:12px 16px;border:2px solid <?= $model_aktif === $m['id'] ? '#0f3460' : '#e0e0e0' ?>;border-radius:8px;cursor:pointer">
+                        <input type="radio" name="wa_ai_model" value="<?= $m['id'] ?>" <?= $model_aktif === $m['id'] ? 'checked' : '' ?>>
+                        <div style="flex:1">
+                            <div style="font-size:13px;font-weight:600;color:#333">
+                                <?= $m['nama'] ?>
+                                <?php if ($m['gratis']): ?>
+                                <span style="background:#e8f8f0;color:#155724;font-size:10px;padding:2px 8px;border-radius:20px;font-weight:600;margin-left:6px">GRATIS</span>
+                                <?php else: ?>
+                                <span style="background:#fff0f0;color:#cc0000;font-size:10px;padding:2px 8px;border-radius:20px;font-weight:600;margin-left:6px">BERBAYAR</span>
+                                <?php endif; ?>
+                            </div>
+                            <div style="font-size:11px;color:#888;margin-top:2px"><?= $m['desc'] ?> · <code style="font-size:10px"><?= $m['id'] ?></code></div>
+                        </div>
+                        <button type="button" onclick="cekModel('<?= $pkey ?>', '<?= $m['id'] ?>', this)"
+                            style="padding:5px 12px;background:#f0f4ff;color:#0f3460;border:1px solid #b8daff;border-radius:6px;font-size:11px;cursor:pointer;white-space:nowrap">
+                            🔍 Cek
+                        </button>
+                    </label>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+            <?php endforeach; ?>
+
+            <!-- System Prompt -->
+            <div style="margin-bottom:20px">
+                <label style="font-size:13px;font-weight:600;color:#444;display:block;margin-bottom:8px">System Prompt AI</label>
+                <textarea name="wa_ai_prompt" rows="5"
+                    style="width:100%;padding:10px 12px;border:2px solid #e0e0e0;border-radius:8px;font-size:13px;font-family:monospace;resize:vertical"
+                    placeholder="Kamu adalah asisten belajar..."><?= htmlspecialchars(get_pengaturan('wa_ai_prompt', '')) ?></textarea>
+                <div style="font-size:11px;color:#888;margin-top:4px">Kosongkan untuk menggunakan prompt default sistem.</div>
+            </div>
+
+            <button type="submit" style="padding:10px 24px;background:#0f3460;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">
+                💾 Simpan Pengaturan AI
+            </button>
+        </form>
+
+        <!-- Hasil cek model -->
+        <div id="hasil_cek_model" style="margin-top:16px;display:none"></div>
+    </div>
+
+</div>
+
+<script>
+function gantiProvider(provider) {
+    document.querySelectorAll('[id^="models_"]').forEach(el => el.style.display = 'none');
+    document.getElementById('models_' + provider).style.display = 'block';
+}
+
+function cekModel(provider, modelId, btn) {
+    const hasil = document.getElementById('hasil_cek_model');
+    hasil.style.display = 'block';
+    hasil.innerHTML = '<div style="padding:10px 14px;background:#f0f4ff;color:#0f3460;border-radius:8px;font-size:13px">🔍 Mengecek model <code>' + modelId + '</code>...</div>';
+    btn.disabled = true;
+    btn.textContent = '⏳';
+
+    fetch('/api/cek_model_ai.php', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({provider: provider, model: modelId})
+    })
+    .then(r => r.json())
+    .then(data => {
+        btn.disabled = false;
+        btn.textContent = '🔍 Cek';
+        if (data.status === 'ok') {
+            hasil.innerHTML = '<div style="padding:10px 14px;background:#e8f8f0;color:#155724;border-radius:8px;font-size:13px;border:1px solid #c3e6cb">✅ Model <strong>' + modelId + '</strong> tersedia dan merespons normal.<br><small style="color:#888">Respons: ' + data.preview + '</small></div>';
+        } else {
+            hasil.innerHTML = '<div style="padding:10px 14px;background:#fff0f0;color:#cc0000;border-radius:8px;font-size:13px;border:1px solid #ffcccc">❌ Model tidak tersedia: ' + data.pesan + '</div>';
+        }
+    })
+    .catch(() => {
+        btn.disabled = false;
+        btn.textContent = '🔍 Cek';
+        hasil.innerHTML = '<div style="padding:10px 14px;background:#fff0f0;color:#cc0000;border-radius:8px;font-size:13px">❌ Gagal menghubungi server.</div>';
+    });
+}
+</script>
 
 <script>
 function bukaTab(id, el) {
