@@ -1,0 +1,390 @@
+<?php
+require_once '../config/config.php';
+
+$raw  = file_get_contents('php://input');
+$data = json_decode($raw, true);
+
+$nomor         = preg_replace('/[^0-9]/', '', $data['sender'] ?? '');
+$device_number = preg_replace('/[^0-9]/', '', $data['device'] ?? '');
+$pesan         = trim($data['pesan'] ?? '');
+$nama          = $data['name'] ?? $data['pushname'] ?? 'Siswa';
+$is_group      = !empty($data['isgroup']);
+
+// Abaikan: pesan kosong, dari grup, atau dari bot sendiri
+$type = $data['type'] ?? '';
+if (empty($nomor) || empty($pesan) || $is_group || $nomor === $device_number || $type !== 'text') {
+    http_response_code(200);
+    echo 'ok';
+    exit;
+}
+
+$pdo = db();
+
+// ── Fungsi kirim WA ────────────────────────────────────────────
+function kirim_wa(string $nomor, string $pesan): void {
+    $ch = curl_init(FONNTE_URL);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST           => true,
+        CURLOPT_HTTPHEADER     => ['Authorization: ' . FONNTE_TOKEN],
+        CURLOPT_POSTFIELDS     => ['target' => $nomor, 'message' => $pesan],
+    ]);
+    curl_exec($ch);
+    curl_close($ch);
+}
+
+// ── Fungsi get/set/hapus session ───────────────────────────────
+function get_wa_session(PDO $pdo, string $nomor): ?array {
+    $stmt = $pdo->prepare("SELECT * FROM wa_sessions WHERE nomor_wa = ?");
+    $stmt->execute([$nomor]);
+    return $stmt->fetch() ?: null;
+}
+
+function set_wa_session(PDO $pdo, string $nomor, string $state, array $context = [], ?int $user_id = null): void {
+    $ctx  = json_encode($context);
+    $stmt = $pdo->prepare("
+        INSERT INTO wa_sessions (nomor_wa, user_id, state, context)
+        VALUES (?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+            state    = VALUES(state),
+            context  = VALUES(context),
+            user_id  = COALESCE(VALUES(user_id), user_id),
+            updated_at = NOW()
+    ");
+    $stmt->execute([$nomor, $user_id, $state, $ctx]);
+}
+
+function hapus_wa_session(PDO $pdo, string $nomor): void {
+    $pdo->prepare("DELETE FROM wa_sessions WHERE nomor_wa = ?")->execute([$nomor]);
+}
+
+// ── Fungsi tanya Gemini ────────────────────────────────────────
+function tanya_groq(string $pertanyaan, array $konteks): string {
+    $system = "Kamu adalah asisten belajar AdaptLearn PRE untuk mata pelajaran Penerapan Rangkaian Elektronika (PRE) di SMK. " .
+              "Siswa bernama {$konteks['nama']}, kelas {$konteks['kelas']}, " .
+              "profil belajar: {$konteks['profil']}, level: {$konteks['level']}. " .
+              "Jawab dengan bahasa formal tapi santai, mudah dipahami siswa SMK. " .
+              "Fokus pada materi elektronika (dioda, transistor, catu daya). " .
+              "Jawaban maksimal 3 paragraf pendek. Gunakan emoji secukupnya.";
+
+    $payload = json_encode([
+        'model'    => GROQ_MODEL,
+        'messages' => [
+            ['role' => 'system', 'content' => $system],
+            ['role' => 'user',   'content' => $pertanyaan],
+        ],
+        'max_tokens'  => 400,
+        'temperature' => 0.7,
+    ]);
+
+    $ch = curl_init(GROQ_API_URL);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST           => true,
+        CURLOPT_HTTPHEADER     => [
+            'Content-Type: application/json',
+            'Authorization: Bearer ' . GROQ_API_KEY,
+        ],
+        CURLOPT_POSTFIELDS => $payload,
+        CURLOPT_TIMEOUT    => 15,
+    ]);
+    $resp   = curl_exec($ch);
+    curl_close($ch);
+    $result = json_decode($resp, true);
+    return $result['choices'][0]['message']['content']
+           ?? 'Maaf, asisten AI sedang tidak tersedia. Coba lagi ya! 🙏';
+}
+
+// ── Label profil & level ───────────────────────────────────────
+$label_profil = [
+    'guided'      => 'Guided-Step Learner',
+    'conceptual'  => 'Conceptual Learner',
+    'practice'    => 'Practice-Oriented Learner',
+];
+$label_level = [
+    'beginner'     => 'Pemula',
+    'intermediate' => 'Menengah',
+    'advanced'     => 'Mahir',
+];
+
+// ── Fungsi tampilkan menu ──────────────────────────────────────
+function tampilkan_menu(array $user, string $nomor, array $lp, array $ll): void {
+    $sudah = !empty($user['profil_learning']);
+    $nama  = $user['nama'];
+    $msg   = "Halo *{$nama}*! 👋 Selamat datang di *AdaptLearn PRE*.\n\n";
+    $msg  .= "📚 *MENU UTAMA*\n";
+    $msg  .= "━━━━━━━━━━━━━━━━━━━━\n";
+    if ($sudah) {
+        $profil = $lp[$user['profil_learning']] ?? $user['profil_learning'];
+        $level  = $ll[$user['level_kemampuan']] ?? $user['level_kemampuan'];
+        $msg   .= "👤 Profil: *{$profil}*\n";
+        $msg   .= "📊 Level: *{$level}*\n\n";
+        $msg   .= "1️⃣ Lanjut Belajar\n";
+        $msg   .= "2️⃣ Cek Progress\n";
+        $msg   .= "3️⃣ Tanya Materi (AI)\n";
+        $msg   .= "4️⃣ Ulangi Pre-Test\n";
+    } else {
+        $msg .= "⚠️ Kamu belum mengerjakan pre-test.\n\n";
+        $msg .= "1️⃣ Mulai Pre-Test\n";
+        $msg .= "3️⃣ Tanya Materi (AI)\n";
+    }
+    $msg .= "━━━━━━━━━━━━━━━━━━━━\n";
+    $msg .= "Balas dengan angka pilihanmu ya! 😊";
+    kirim_wa($nomor, $msg);
+}
+
+// ── Fungsi kirim soal pre-test ─────────────────────────────────
+function kirim_soal_pretest(PDO $pdo, string $nomor, int $index): void {
+    require_once dirname(__DIR__) . '/config/soal_pretest.php';
+
+    $soal_pengetahuan = defined('SOAL_PENGETAHUAN') ? SOAL_PENGETAHUAN : [];
+    $soal_sjt         = defined('SOAL_SJT')         ? SOAL_SJT         : [];
+    $semua_soal       = array_merge(
+        array_map(fn($s) => array_merge($s, ['bagian' => 'pengetahuan']), $soal_pengetahuan),
+        array_map(fn($s) => array_merge($s, ['bagian' => 'sjt']),         $soal_sjt)
+    );
+
+    if (!isset($semua_soal[$index])) {
+        kirim_wa($nomor, "Soal ke-" . ($index + 1) . " tidak ditemukan. Coba kerjakan di web ya!\n" . APP_URL . "/pretest.php");
+        return;
+    }
+
+    $soal = $semua_soal[$index];
+    $no   = $index + 1;
+    $bag  = $soal['bagian'] === 'pengetahuan' ? 'A — Pengetahuan' : 'B — Skenario Belajar';
+    $msg  = "📝 *Soal {$no}/20* (Bagian {$bag})\n";
+    $msg .= "━━━━━━━━━━━━━━━━━━━━\n\n";
+    $msg .= ($soal['soal'] ?? '(soal tidak tersedia)') . "\n\n";
+    $msg .= "🅐 " . $soal['opsi']['A'] . "\n";
+    $msg .= "🅑 " . $soal['opsi']['B'] . "\n";
+    $msg .= "🅒 " . $soal['opsi']['C'] . "\n";
+    $msg .= "🅓 " . $soal['opsi']['D'] . "\n\n";
+    $msg .= "_Balas A, B, C, atau D_ 👆\n_Ketik *batal* untuk keluar (jawaban tidak disimpan)_";
+    kirim_wa($nomor, $msg);
+}
+
+// ══════════════════════════════════════════════════════════════
+// FORMAT REGISTRASI: "daftar NIS PASSWORD"
+// ══════════════════════════════════════════════════════════════
+if (preg_match('/^daftar\s+(\S+)\s+(\S+)$/i', $pesan, $m)) {
+    $nis_input  = trim($m[1]);
+    $pass_input = trim($m[2]);
+
+    $cek = $pdo->prepare("SELECT * FROM users WHERE nis = ? AND role = 'siswa'");
+    $cek->execute([$nis_input]);
+    $calon = $cek->fetch();
+
+    if (!$calon) {
+        kirim_wa($nomor, "NIS *{$nis_input}* tidak ditemukan. Hubungi gurumu ya! 🙏");
+        exit;
+    }
+    if (!password_verify($pass_input, $calon['password_hash'])) {
+        kirim_wa($nomor, "Password salah. Coba lagi:\n\n*daftar NIS PASSWORD*");
+        exit;
+    }
+    if ($calon['nomor_wa'] && $calon['nomor_wa'] !== $nomor) {
+        kirim_wa($nomor, "Akun ini sudah terhubung ke nomor WA lain. Hubungi gurumu jika ada masalah. 🙏");
+        exit;
+    }
+
+    $pdo->prepare("UPDATE users SET nomor_wa = ? WHERE id = ?")->execute([$nomor, $calon['id']]);
+    kirim_wa($nomor, "Berhasil! Halo *{$calon['nama']}*! 👋\nNomor WA kamu sudah terdaftar.\n\nKetik *menu* untuk mulai belajar!");
+    set_wa_session($pdo, $nomor, 'menu', [], $calon['id']);
+    exit;
+}
+
+// ══════════════════════════════════════════════════════════════
+// CEK USER TERDAFTAR
+// ══════════════════════════════════════════════════════════════
+$stmt = $pdo->prepare("
+    SELECT u.*, p.profil_learning, p.level_kemampuan, p.profil_gabungan, p.skor_pengetahuan
+    FROM users u
+    LEFT JOIN pre_test_results p ON p.user_id = u.id
+    WHERE u.nomor_wa = ? AND u.role = 'siswa'
+");
+$stmt->execute([$nomor]);
+$user = $stmt->fetch();
+
+// Nomor tidak terdaftar & bukan format daftar → ABAIKAN
+if (!$user) {
+    http_response_code(200);
+    echo 'ok';
+    exit;
+}
+
+// ── Ambil sesi ────────────────────────────────────────────────
+$sesi    = get_wa_session($pdo, $nomor);
+$state   = $sesi['state'] ?? 'menu';
+$context = json_decode($sesi['context'] ?? '{}', true) ?: [];
+
+// ── Keyword global ─────────────────────────────────────────────
+$pesan_lower = strtolower($pesan);
+if (in_array($pesan_lower, ['menu', 'start', 'halo', 'hallo', 'hai', 'hi', 'hello', 'mulai'])) {
+    tampilkan_menu($user, $nomor, $label_profil, $label_level);
+    set_wa_session($pdo, $nomor, 'menu', [], $user['id']);
+    exit;
+}
+if (in_array($pesan_lower, ['batal', 'cancel', 'keluar'])) {
+    if ($state === 'pretest') {
+        kirim_wa($nomor, "⚠️ *Yakin ingin keluar dari Pre-Test?*\n\nJika keluar, jawaban yang sudah kamu isi *tidak akan disimpan* dan pre-test harus diulang dari awal.\n\nKetik *ya* untuk keluar, atau *lanjut* untuk melanjutkan soal.");
+        set_wa_session($pdo, $nomor, 'konfirmasi_keluar_pretest', $context, $user['id']);
+    } else {
+        kirim_wa($nomor, "Oke, kembali ke menu utama ya! 😊");
+        tampilkan_menu($user, $nomor, $label_profil, $label_level);
+        set_wa_session($pdo, $nomor, 'menu', [], $user['id']);
+    }
+    exit;
+}
+
+// ══════════════════════════════════════════════════════════════
+// STATE MACHINE
+// ══════════════════════════════════════════════════════════════
+switch ($state) {
+
+    case 'menu':
+        $sudah_pretest = !empty($user['profil_learning']);
+
+        if ($pesan === '1') {
+            if (!$sudah_pretest) {
+                set_wa_session($pdo, $nomor, 'pretest', ['soal_index' => 0, 'jawaban' => []], $user['id']);
+                kirim_wa($nomor, "📝 *PRE-TEST AdaptLearn PRE*\n\nPre-test terdiri dari 20 soal.\nKetik *batal* kapan saja untuk keluar.\n\nSoal pertama: 🚀");
+                kirim_soal_pretest($pdo, $nomor, 0);
+            } else {
+                $last = $pdo->prepare("
+                    SELECT a.content_id, a.topik, c.judul
+                    FROM activity_log a
+                    JOIN content c ON c.id = a.content_id
+                    WHERE a.user_id = ? AND a.tipe = 'buka_materi'
+                    ORDER BY a.id DESC LIMIT 1
+                ");
+                $last->execute([$user['id']]);
+                $lk = $last->fetch();
+                if ($lk) {
+                    $url = APP_URL . "/materi.php?topik={$lk['topik']}&konten={$lk['content_id']}";
+                    kirim_wa($nomor, "▶️ *Lanjut Belajar*\n\nMateri terakhir:\n📖 *{$lk['judul']}*\n\n🔗 {$url}\n\n_Buka link di atas untuk melanjutkan belajar, atau ketik:_\n*menu* — kembali ke menu utama\n*3* — tanya materi ke AI 🤖");
+                } else {
+                    kirim_wa($nomor, "▶️ Yuk mulai belajar!\n\n🔗 " . APP_URL . "/materi.php");
+                }
+                set_wa_session($pdo, $nomor, 'menu', [], $user['id']);
+            }
+
+        } elseif ($pesan === '2' && $sudah_pretest) {
+            $topik_list = [
+                'dioda'                  => 'Dioda',
+                'pengertian-transistor'  => 'Pengertian Transistor',
+                'pengukuran-transistor'  => 'Pengukuran Transistor',
+                'catu-daya'              => 'Catu Daya',
+            ];
+            $msg = "📊 *Progress Belajarmu*\n━━━━━━━━━━━━━━━━━━━━\n";
+            foreach ($topik_list as $slug => $nama_topik) {
+                $t = $pdo->prepare("SELECT COUNT(*) FROM content WHERE topik = ?");
+                $t->execute([$slug]);
+                $total = (int)$t->fetchColumn();
+
+                $b = $pdo->prepare("SELECT COUNT(DISTINCT content_id) FROM activity_log WHERE user_id = ? AND topik = ? AND tipe = 'selesai_materi'");
+                $b->execute([$user['id'], $slug]);
+                $dibuka = (int)$b->fetchColumn();
+
+                $pct = $total > 0 ? round(($dibuka / $total) * 100) : 0;
+                $bar = str_repeat('█', (int)($pct / 10)) . str_repeat('░', 10 - (int)($pct / 10));
+                $msg .= "\n📚 *{$nama_topik}*\n{$bar} {$pct}%\n";
+            }
+            $msg .= "\n━━━━━━━━━━━━━━━━━━━━\n";
+            $msg .= "📝 Skor Pre-Test: *{$user['skor_pengetahuan']}/12*\n";
+            $post = $pdo->prepare("SELECT skor_pengetahuan FROM post_test_results WHERE user_id = ? ORDER BY id DESC LIMIT 1");
+            $post->execute([$user['id']]);
+            $sp = $post->fetchColumn();
+            if ($sp !== false) $msg .= "🎯 Skor Post-Test: *{$sp}/12*\n";
+            $msg .= "\nKetik *menu* untuk kembali 😊";
+            kirim_wa($nomor, $msg);
+            set_wa_session($pdo, $nomor, 'menu', [], $user['id']);
+
+        } elseif ($pesan === '3') {
+            kirim_wa($nomor, "🤖 *Tanya Materi (AI)*\n\nSilakan ketik pertanyaanmu tentang materi PRE.\nKetik *batal* untuk kembali. 😊");
+            set_wa_session($pdo, $nomor, 'tanya_ai', [], $user['id']);
+
+        } elseif ($pesan === '4') {
+            set_wa_session($pdo, $nomor, 'pretest', ['soal_index' => 0, 'jawaban' => []], $user['id']);
+            kirim_wa($nomor, "📝 *PRE-TEST* — Soal pertama: 🚀");
+            kirim_soal_pretest($pdo, $nomor, 0);
+
+        } else {
+            kirim_wa($nomor, "Hmm, pilihan tidak dikenali 😅\nBalas dengan angka *1*, *2*, *3*, atau *4* ya!");
+        }
+        break;
+
+    case 'tanya_ai':
+        kirim_wa($nomor, "⏳ Sedang diproses AI, tunggu sebentar ya...");
+        $konteks = [
+            'nama'   => $user['nama'],
+            'kelas'  => $user['kelas'] ?? '-',
+            'profil' => $label_profil[$user['profil_learning']] ?? 'Umum',
+            'level'  => $label_level[$user['level_kemampuan']] ?? 'Umum',
+        ];
+        $jawaban = tanya_groq($pesan, $konteks);
+        kirim_wa($nomor, "🤖 *Jawaban AI:*\n\n{$jawaban}\n\n_Punya pertanyaan lain? Langsung ketik! Atau ketik *batal* untuk kembali._ 😊");
+        break;
+
+    case 'pretest':
+        $soal_index = (int)($context['soal_index'] ?? 0);
+        $jawaban    = $context['jawaban'] ?? [];
+        $jwb_upper  = strtoupper(trim($pesan));
+
+        if (!in_array($jwb_upper, ['A', 'B', 'C', 'D'])) {
+            kirim_wa($nomor, "Jawab dengan huruf *A*, *B*, *C*, atau *D* ya! 😊");
+            break;
+        }
+
+        $jawaban[] = $jwb_upper;
+        $soal_index++;
+
+        if ($soal_index >= 20) {
+            $jawaban_json = json_encode($jawaban);
+            $cmd = PYTHON_BIN . ' ' . CLASSIFY_SCRIPT . ' ' . escapeshellarg($user['id']) . ' ' . escapeshellarg($jawaban_json);
+            shell_exec($cmd . ' > /dev/null 2>&1 &');
+            kirim_wa($nomor, "🎉 *Pre-Test Selesai!*\n\nJawaban kamu sudah diterima! 🙌\nHasil profil belajarmu sedang diproses...\n\nTunggu beberapa detik, lalu ketik *menu*. 😊");
+            hapus_wa_session($pdo, $nomor);
+        } else {
+            set_wa_session($pdo, $nomor, 'pretest', ['soal_index' => $soal_index, 'jawaban' => $jawaban], $user['id']);
+            kirim_soal_pretest($pdo, $nomor, $soal_index);
+        }
+        break;
+
+    case 'konfirmasi_keluar_pretest':
+        if ($pesan_lower === 'ya') {
+            kirim_wa($nomor, "Oke, pre-test dibatalkan. Kembali ke menu ya! 😊");
+            tampilkan_menu($user, $nomor, $label_profil, $label_level);
+            set_wa_session($pdo, $nomor, 'menu', [], $user['id']);
+        } elseif ($pesan_lower === 'lanjut') {
+            $soal_index = (int)($context['soal_index'] ?? 0);
+            kirim_wa($nomor, "Oke, lanjut! Ini soal yang tadi: 💪");
+            kirim_soal_pretest($pdo, $nomor, $soal_index);
+            set_wa_session($pdo, $nomor, 'pretest', $context, $user['id']);
+        } else {
+            kirim_wa($nomor, "Ketik *ya* untuk keluar, atau *lanjut* untuk melanjutkan soal. 😊");
+        }
+        break;
+
+    case 'konfirmasi_keluar_pretest':
+        if ($pesan_lower === 'ya') {
+            kirim_wa($nomor, "Oke, pre-test dibatalkan. Kembali ke menu ya! 😊");
+            tampilkan_menu($user, $nomor, $label_profil, $label_level);
+            set_wa_session($pdo, $nomor, 'menu', [], $user['id']);
+        } elseif ($pesan_lower === 'lanjut') {
+            $soal_index = (int)($context['soal_index'] ?? 0);
+            kirim_wa($nomor, "Oke, lanjut! Ini soal yang tadi: 💪");
+            kirim_soal_pretest($pdo, $nomor, $soal_index);
+            set_wa_session($pdo, $nomor, 'pretest', $context, $user['id']);
+        } else {
+            kirim_wa($nomor, "Ketik *ya* untuk keluar, atau *lanjut* untuk melanjutkan soal. 😊");
+        }
+        break;
+
+    default:
+        tampilkan_menu($user, $nomor, $label_profil, $label_level);
+        set_wa_session($pdo, $nomor, 'menu', [], $user['id']);
+        break;
+}
+
+http_response_code(200);
+echo 'ok';
