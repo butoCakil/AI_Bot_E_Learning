@@ -1032,7 +1032,11 @@ function prosesImport(hasilDiv, total) {
                     ?>
                     <input type="text" readonly value="<?= htmlspecialchars($tok_sensor) ?>"
                         style="width:100%;padding:9px 12px;border:2px solid #e0e0e0;border-radius:8px;font-size:13px;background:#f9f9f9;color:#666;font-family:monospace">
-                    <div style="font-size:11px;color:#888;margin-top:3px">Token aktif dari config.php (tersensor). Ganti via SSH.</div>
+                    <div style="font-size:11px;color:#888;margin-top:3px">Token aktif dari config.php (tersensor). Ganti via SSH dengan perintah:</div>
+                    <div style="display:flex;gap:8px;align-items:center;margin-top:6px">
+                        <code id="ssh_cmd" style="flex:1;padding:7px 10px;background:#1e1e2e;color:#a6e3a1;border-radius:6px;font-size:11px;display:block;overflow-x:auto">sudo sed -i "s|define('FONNTE_TOKEN', '.*');|define('FONNTE_TOKEN', 'TOKEN_BARU');|" /var/www/html/aibotlms/config/config.php</code>
+                        <button onclick="copySSH()" id="btn_copy_ssh" style="padding:6px 12px;background:#1e1e2e;color:#a6e3a1;border:1px solid #a6e3a1;border-radius:6px;font-size:11px;cursor:pointer;white-space:nowrap">📋 Copy</button>
+                    </div>
                 </div>
             </div>
             <button type="submit"
@@ -1052,6 +1056,14 @@ function prosesImport(hasilDiv, total) {
                     btn.textContent = '📋 Copy';
                     btn.style.background = '#0f3460';
                 }, 2000);
+            });
+        }
+        function copySSH() {
+            const cmd = document.getElementById('ssh_cmd').textContent;
+            navigator.clipboard.writeText(cmd).then(() => {
+                const btn = document.getElementById('btn_copy_ssh');
+                btn.textContent = '✅ Tersalin!';
+                setTimeout(() => { btn.textContent = '📋 Copy'; }, 2000);
             });
         }
         </script>
