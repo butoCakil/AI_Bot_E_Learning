@@ -61,6 +61,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi'])) {
         $pesan_akun = '✓ Pengaturan AI berhasil disimpan.';
     } elseif ($_POST['aksi'] === 'setting_wa_gateway') {
         set_pengaturan('wa_bot_nomor',    trim($_POST['wa_bot_nomor']    ?? ''));
+        set_pengaturan('wa_gateway',   trim($_POST['wa_gateway']   ?? 'fonnte'));
         $pesan_akun = '✓ Konfigurasi WA Gateway berhasil disimpan.';
     }
 }
@@ -1017,28 +1018,64 @@ function prosesImport(hasilDiv, total) {
         <!-- Form konfigurasi WA Gateway -->
         <form method="POST">
             <input type="hidden" name="aksi" value="setting_wa_gateway">
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
-                <div>
-                    <label style="font-size:13px;font-weight:600;color:#444;display:block;margin-bottom:6px">Nomor Bot (format: 628xxx)</label>
-                    <input type="text" name="wa_bot_nomor" value="<?= htmlspecialchars(get_pengaturan('wa_bot_nomor', '')) ?>"
-                        placeholder="6285111308087"
-                        style="width:100%;padding:9px 12px;border:2px solid #e0e0e0;border-radius:8px;font-size:13px">
-                </div>
-                <div>
-                    <label style="font-size:13px;font-weight:600;color:#444;display:block;margin-bottom:6px">Device ID / Token Fonnte</label>
-                    <?php
-                    $tok = defined('FONNTE_TOKEN') ? FONNTE_TOKEN : '';
-                    $tok_sensor = $tok ? (substr($tok,0,4) . str_repeat('*', max(0,strlen($tok)-8)) . substr($tok,-4)) : '-';
-                    ?>
-                    <input type="text" readonly value="<?= htmlspecialchars($tok_sensor) ?>"
-                        style="width:100%;padding:9px 12px;border:2px solid #e0e0e0;border-radius:8px;font-size:13px;background:#f9f9f9;color:#666;font-family:monospace">
-                    <div style="font-size:11px;color:#888;margin-top:3px">Token aktif dari config.php (tersensor). Ganti via SSH dengan perintah:</div>
-                    <div style="display:flex;gap:8px;align-items:center;margin-top:6px">
-                        <code id="ssh_cmd" style="flex:1;padding:7px 10px;background:#1e1e2e;color:#a6e3a1;border-radius:6px;font-size:11px;display:block;overflow-x:auto">sudo sed -i "s|define('FONNTE_TOKEN', '.*');|define('FONNTE_TOKEN', 'TOKEN_BARU');|" /var/www/html/aibotlms/config/config.php</code>
-                        <button onclick="copySSH()" id="btn_copy_ssh" style="padding:6px 12px;background:#1e1e2e;color:#a6e3a1;border:1px solid #a6e3a1;border-radius:6px;font-size:11px;cursor:pointer;white-space:nowrap">📋 Copy</button>
-                    </div>
+
+            <!-- Pilih Gateway -->
+            <?php $gw_aktif = get_pengaturan('wa_gateway', 'fonnte'); ?>
+            <div style="margin-bottom:20px">
+                <label style="font-size:13px;font-weight:600;color:#444;display:block;margin-bottom:8px">Gateway Aktif</label>
+                <div style="display:flex;gap:10px;flex-wrap:wrap">
+                    <label style="display:flex;align-items:center;gap:8px;padding:10px 18px;border:2px solid <?= $gw_aktif==='fonnte' ? '#0f3460' : '#e0e0e0' ?>;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600">
+                        <input type="radio" name="wa_gateway" value="fonnte" <?= $gw_aktif==='fonnte' ? 'checked' : '' ?>>
+                        📱 Fonnte
+                    </label>
+                    <label style="display:flex;align-items:center;gap:8px;padding:10px 18px;border:2px solid <?= $gw_aktif==='whacenter' ? '#0f3460' : '#e0e0e0' ?>;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600">
+                        <input type="radio" name="wa_gateway" value="whacenter" <?= $gw_aktif==='whacenter' ? 'checked' : '' ?>>
+                        💬 Whacenter
+                    </label>
                 </div>
             </div>
+
+            <!-- Nomor Bot -->
+            <div style="margin-bottom:16px">
+                <label style="font-size:13px;font-weight:600;color:#444;display:block;margin-bottom:6px">Nomor Bot (format: 628xxx)</label>
+                <input type="text" name="wa_bot_nomor" value="<?= htmlspecialchars(get_pengaturan('wa_bot_nomor', '')) ?>"
+                    placeholder="6285111308087"
+                    style="width:100%;padding:9px 12px;border:2px solid #e0e0e0;border-radius:8px;font-size:13px">
+                <div style="font-size:11px;color:#888;margin-top:3px">Nomor WA yang terhubung ke gateway aktif</div>
+            </div>
+
+            <!-- Info Fonnte -->
+            <div style="margin-bottom:16px;padding:14px 16px;background:#f0f4ff;border-radius:10px;border:1px solid #b8daff">
+                <div style="font-size:13px;font-weight:600;color:#0f3460;margin-bottom:8px">📱 Fonnte — Token Aktif</div>
+                <?php
+                $tok = defined('FONNTE_TOKEN') ? FONNTE_TOKEN : '';
+                $tok_sensor = $tok ? (substr($tok,0,4) . str_repeat('*', max(0,strlen($tok)-8)) . substr($tok,-4)) : '-';
+                ?>
+                <input type="text" readonly value="<?= htmlspecialchars($tok_sensor) ?>"
+                    style="width:100%;padding:8px 12px;border:1px solid #b8daff;border-radius:6px;font-size:12px;background:#fff;color:#666;font-family:monospace;margin-bottom:6px">
+                <div style="font-size:11px;color:#888">Tersensor. Ganti via SSH:</div>
+                <div style="display:flex;gap:8px;align-items:center;margin-top:4px">
+                    <code id="ssh_cmd" style="flex:1;padding:6px 10px;background:#1e1e2e;color:#a6e3a1;border-radius:6px;font-size:10px;display:block;overflow-x:auto;white-space:nowrap">sudo sed -i "s|define('FONNTE_TOKEN', '.*');|define('FONNTE_TOKEN', 'TOKEN_BARU');|" /var/www/html/aibotlms/config/config.php</code>
+                    <button onclick="copySSH()" id="btn_copy_ssh" style="padding:5px 10px;background:#1e1e2e;color:#a6e3a1;border:1px solid #a6e3a1;border-radius:6px;font-size:11px;cursor:pointer;white-space:nowrap">📋</button>
+                </div>
+            </div>
+
+            <!-- Info Whacenter -->
+            <div style="margin-bottom:20px;padding:14px 16px;background:#f0fff4;border-radius:10px;border:1px solid #c3e6cb">
+                <div style="font-size:13px;font-weight:600;color:#155724;margin-bottom:8px">💬 Whacenter — Device ID Aktif</div>
+                <?php
+                $wc = defined('WHACENTER_DEVICE_ID') ? WHACENTER_DEVICE_ID : '';
+                $wc_sensor = $wc ? (substr($wc,0,8) . str_repeat('*', max(0,strlen($wc)-16)) . substr($wc,-8)) : '-';
+                ?>
+                <input type="text" readonly value="<?= htmlspecialchars($wc_sensor) ?>"
+                    style="width:100%;padding:8px 12px;border:1px solid #c3e6cb;border-radius:6px;font-size:12px;background:#fff;color:#666;font-family:monospace;margin-bottom:6px">
+                <div style="font-size:11px;color:#888">Tersensor. Ganti via SSH:</div>
+                <div style="display:flex;gap:8px;align-items:center;margin-top:4px">
+                    <code id="ssh_cmd_wc" style="flex:1;padding:6px 10px;background:#1e1e2e;color:#a6e3a1;border-radius:6px;font-size:10px;display:block;overflow-x:auto;white-space:nowrap">sudo sed -i "s|define('WHACENTER_DEVICE_ID', '.*');|define('WHACENTER_DEVICE_ID', 'DEVICE_ID_BARU');|" /var/www/html/aibotlms/config/config.php</code>
+                    <button onclick="copySSHWC()" id="btn_copy_ssh_wc" style="padding:5px 10px;background:#1e1e2e;color:#a6e3a1;border:1px solid #a6e3a1;border-radius:6px;font-size:11px;cursor:pointer;white-space:nowrap">📋</button>
+                </div>
+            </div>
+
             <button type="submit"
                 style="padding:9px 20px;background:#27ae60;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">
                 💾 Simpan Konfigurasi Gateway
@@ -1064,6 +1101,14 @@ function prosesImport(hasilDiv, total) {
                 const btn = document.getElementById('btn_copy_ssh');
                 btn.textContent = '✅ Tersalin!';
                 setTimeout(() => { btn.textContent = '📋 Copy'; }, 2000);
+            });
+        }
+        function copySSHWC() {
+            const cmd = document.getElementById('ssh_cmd_wc').textContent;
+            navigator.clipboard.writeText(cmd).then(() => {
+                const btn = document.getElementById('btn_copy_ssh_wc');
+                btn.textContent = '✅';
+                setTimeout(() => { btn.textContent = '📋'; }, 2000);
             });
         }
         </script>

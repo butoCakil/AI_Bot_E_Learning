@@ -5,14 +5,30 @@ require_once '../includes/functions.php';
 $raw  = file_get_contents('php://input');
 $data = json_decode($raw, true);
 
-$nomor         = preg_replace('/[^0-9]/', '', $data['sender'] ?? '');
-$device_number = preg_replace('/[^0-9]/', '', $data['device'] ?? '');
-$pesan         = trim($data['pesan'] ?? '');
-$nama          = $data['name'] ?? $data['pushname'] ?? 'Siswa';
-$is_group      = !empty($data['isgroup']);
+// ── Deteksi gateway & normalisasi payload ─────────────────────
+$source = strtoupper($data['source'] ?? '');
+$is_whacenter = ($source === 'WHACENTER') || isset($data['from']);
 
-// Abaikan: pesan kosong, dari grup, atau dari bot sendiri
-$type = $data['type'] ?? '';
+if ($is_whacenter) {
+    // Format Whacenter
+    $nomor_raw     = preg_replace('/[^0-9]/', '', $data['from'] ?? '');
+    $nomor         = preg_match('/^0/', $nomor_raw) ? '62' . substr($nomor_raw, 1) : $nomor_raw;
+    $device_number = preg_replace('/[^0-9]/', '', $data['to']   ?? '');
+    $pesan         = trim($data['message'] ?? '');
+    $nama          = $data['pushName'] ?? 'Siswa';
+    $is_group      = !empty($data['is_group']);
+    $type          = $data['message_type'] ?? 'text';
+} else {
+    // Format Fonnte
+    $nomor         = preg_replace('/[^0-9]/', '', $data['sender'] ?? '');
+    $device_number = preg_replace('/[^0-9]/', '', $data['device'] ?? '');
+    $pesan         = trim($data['pesan'] ?? $data['message'] ?? '');
+    $nama          = $data['name'] ?? $data['pushname'] ?? 'Siswa';
+    $is_group      = !empty($data['isgroup']);
+    $type          = $data['type'] ?? 'text';
+}
+
+// Abaikan: pesan kosong, dari grup, dari bot sendiri, bukan text
 if (empty($nomor) || empty($pesan) || $is_group || $nomor === $device_number || $type !== 'text') {
     http_response_code(200);
     echo 'ok';
@@ -21,15 +37,30 @@ if (empty($nomor) || empty($pesan) || $is_group || $nomor === $device_number || 
 
 $pdo = db();
 
-// ── Fungsi kirim WA ────────────────────────────────────────────
+// ── Fungsi kirim WA (dual gateway) ────────────────────────────
 function kirim_wa(string $nomor, string $pesan): void {
-    $ch = curl_init(FONNTE_URL);
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_POST           => true,
-        CURLOPT_HTTPHEADER     => ['Authorization: ' . FONNTE_TOKEN],
-        CURLOPT_POSTFIELDS     => ['target' => $nomor, 'message' => $pesan],
-    ]);
+    $gateway = get_pengaturan('wa_gateway', 'fonnte');
+    if ($gateway === 'whacenter') {
+        $ch = curl_init(WHACENTER_URL);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST           => true,
+            CURLOPT_POSTFIELDS     => [
+                'device_id' => WHACENTER_DEVICE_ID,
+                'number'    => $nomor,
+                'message'   => $pesan,
+            ],
+        ]);
+    } else {
+        // Default: Fonnte
+        $ch = curl_init(FONNTE_URL);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST           => true,
+            CURLOPT_HTTPHEADER     => ['Authorization: ' . FONNTE_TOKEN],
+            CURLOPT_POSTFIELDS     => ['target' => $nomor, 'message' => $pesan],
+        ]);
+    }
     curl_exec($ch);
     curl_close($ch);
 }
