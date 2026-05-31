@@ -103,7 +103,9 @@ body {
             <a href="login_guru.php" class="btn btn-guru">Masuk sebagai Guru →</a>
         </div>
     </div>
-
+    <div style="text-align:center;margin-bottom:20px">
+        <a href="panduan.php" target="_blank" style="display:inline-block;padding:10px 24px;background:rgba(255,255,255,.15);color:#fff;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none;border:1px solid rgba(255,255,255,.3)">📘 Panduan Penggunaan</a>
+    </div>
     <div class="footer">
         AdaptLearn PRE · SMK Negeri Bansari · 2026
     </div>
