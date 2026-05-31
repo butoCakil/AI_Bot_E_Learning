@@ -96,10 +96,20 @@ function login_siswa(string $nis, string $password): ?array {
     return $user;
 }
 
+// ── Normalisasi nomor WA ─────────────────────────────────────────
+function normalisasi_wa(string $nomor): string {
+    $nomor = preg_replace('/[^0-9]/', '', $nomor); // hapus semua selain angka
+    if (str_starts_with($nomor, '0')) {
+        $nomor = '62' . substr($nomor, 1);
+    }
+    return $nomor;
+}
+
 // ── Buat akun siswa (oleh guru) ──────────────────────────────────
 function buat_akun_siswa(string $nis, string $nama, string $kelas, string $nomor_wa, string $password): array {
     $pdo = db();
 
+    $nomor_wa = $nomor_wa ? normalisasi_wa($nomor_wa) : '';
     // Cek NIS sudah ada
     $stmt = $pdo->prepare("SELECT id FROM users WHERE nis = ?");
     $stmt->execute([$nis]);
@@ -127,7 +137,7 @@ function buat_akun_siswa(string $nis, string $nama, string $kelas, string $nomor
 // ── Update akun siswa ────────────────────────────────────────────
 function update_akun_siswa(int $id, string $nama, string $kelas, string $nomor_wa, ?string $password = null): array {
     $pdo = db();
-
+    $nomor_wa = $nomor_wa ? normalisasi_wa($nomor_wa) : '';
     // Cek nomor WA tidak dipakai user lain
     $stmt = $pdo->prepare("SELECT id FROM users WHERE nomor_wa = ? AND id != ?");
     $stmt->execute([$nomor_wa, $id]);

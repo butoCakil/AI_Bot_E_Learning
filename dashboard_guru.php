@@ -43,6 +43,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi'])) {
     } elseif ($_POST['aksi'] === 'hapus' && !empty($_POST['hapus_id'])) {
         hapus_akun_siswa((int) $_POST['hapus_id']);
         $pesan_akun = "✓ Akun siswa berhasil dihapus.";
+    } elseif ($_POST['aksi'] === 'edit_siswa' && !empty($_POST['edit_id'])) {
+        $id   = (int) $_POST['edit_id'];
+        $nama = trim($_POST['edit_nama'] ?? '');
+        $nis  = trim($_POST['edit_nis'] ?? '');
+        $kelas = trim($_POST['edit_kelas'] ?? '');
+        $wa   = normalisasi_wa(trim($_POST['edit_wa'] ?? ''));
+        if ($nama && $nis) {
+            $pdo->prepare("UPDATE users SET nama=?, nis=?, kelas=?, nomor_wa=? WHERE id=? AND role='siswa'")
+                ->execute([$nama, $nis, $kelas, $wa, $id]);
+            $pesan_akun = '✓ Data siswa berhasil diperbarui.';
+        } else {
+            $pesan_akun = '✗ Nama dan NIS tidak boleh kosong.';
+        }
     } elseif ($_POST['aksi'] === 'setting_posttest') {
         $aktif = isset($_POST['posttest_aktif']) ? '1' : '0';
         $durasi = max(1, (int) $_POST['durasi_hari']);
@@ -596,6 +609,11 @@ tr:hover td { background: #fafbff; }
                 <td style="font-size:12px;color:#888;white-space:nowrap"><?= $s['tgl_pretest'] ? date('d/m/Y', strtotime($s['tgl_pretest'])) : '-' ?></td>
                 <td>
                     <div style="display:flex;flex-direction:column;gap:4px;min-width:160px">
+                        <button type="button" class="btn btn-sm btn-outline"
+                            style="background:#2980b9;color:#fff;border-color:#2980b9"
+                            onclick="bukaModalEdit(<?= $s['id'] ?>, '<?= htmlspecialchars($s['nama'], ENT_QUOTES) ?>', '<?= htmlspecialchars($s['nis'], ENT_QUOTES) ?>', '<?= htmlspecialchars($s['kelas'], ENT_QUOTES) ?>', '<?= htmlspecialchars($s['nomor_wa'] ?? '', ENT_QUOTES) ?>')">
+                            ✏️ Edit
+                        </button>
                         <form method="POST" style="display:flex;gap:4px">
                             <input type="hidden" name="aksi" value="reset_password">
                             <input type="hidden" name="reset_id" value="<?= $s['id'] ?>">
@@ -1267,6 +1285,102 @@ window.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 
+<!-- Modal Edit Siswa -->
+<div id="modalEditSiswa" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:9999;align-items:center;justify-content:center">
+    <div style="background:#fff;border-radius:10px;padding:28px 32px;width:420px;max-width:95vw;box-shadow:0 8px 32px rgba(0,0,0,0.18)">
+        <h3 style="margin:0 0 20px 0;color:#1a2a4a;font-size:16px">✏️ Edit Data Siswa</h3>
+        <form method="POST" id="formEditSiswa">
+            <input type="hidden" name="aksi" value="edit_siswa">
+            <input type="hidden" name="edit_id" id="edit_id">
+            <div style="margin-bottom:14px">
+                <label style="display:block;font-size:13px;font-weight:600;margin-bottom:4px;color:#333">Nama Lengkap <span style="color:red">*</span></label>
+                <input type="text" name="edit_nama" id="edit_nama" required
+                    style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;box-sizing:border-box">
+            </div>
+            <div style="margin-bottom:14px">
+                <label style="display:block;font-size:13px;font-weight:600;margin-bottom:4px;color:#333">NIS <span style="color:red">*</span></label>
+                <input type="text" name="edit_nis" id="edit_nis" required
+                    style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;box-sizing:border-box">
+            </div>
+            <div style="margin-bottom:14px">
+                <label style="display:block;font-size:13px;font-weight:600;margin-bottom:4px;color:#333">Kelas</label>
+                <input type="text" name="edit_kelas" id="edit_kelas"
+                    style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;box-sizing:border-box">
+            </div>
+            <div style="margin-bottom:20px">
+                <label style="display:block;font-size:13px;font-weight:600;margin-bottom:4px;color:#333">Nomor WA</label>
+                <input type="text" name="edit_wa" id="edit_wa"
+                    style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;box-sizing:border-box">
+            </div>
+            <div style="display:flex;gap:10px;justify-content:flex-end">
+                <button type="button" onclick="tutupModalEdit()"
+                    style="padding:8px 18px;border:1px solid #ddd;border-radius:6px;background:#f5f5f5;cursor:pointer;font-size:13px">
+                    Batal
+                </button>
+                <button type="submit"
+                    style="padding:8px 18px;border:none;border-radius:6px;background:#27ae60;color:#fff;cursor:pointer;font-size:13px;font-weight:600">
+                    💾 Simpan
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
 
+<script>
+function bukaModalEdit(id, nama, nis, kelas, wa) {
+    document.getElementById('edit_id').value   = id;
+    document.getElementById('edit_nama').value  = nama;
+    document.getElementById('edit_nis').value   = nis;
+    document.getElementById('edit_kelas').value = kelas;
+    document.getElementById('edit_wa').value    = wa;
+    var modal = document.getElementById('modalEditSiswa');
+    modal.style.display = 'flex';
+}
+function tutupModalEdit() {
+    document.getElementById('modalEditSiswa').style.display = 'none';
+}
+// Tutup modal jika klik di luar
+document.getElementById('modalEditSiswa').addEventListener('click', function(e) {
+    if (e.target === this) tutupModalEdit();
+});
+
+// Normalisasi input nomor WA di UI
+function attachWaInputHandler(el) {
+    if (!el) return;
+    el.addEventListener('keypress', function(e) {
+        if (!/[0-9]/.test(e.key)) e.preventDefault();
+    });
+    el.addEventListener('input', function() {
+        var pos = this.selectionStart;
+        var clean = this.value.replace(/[^0-9]/g, '');
+        // Validasi awalan: hanya boleh 08 atau 628
+        if (clean.length >= 2 && clean.startsWith('6') && !clean.startsWith('62')) {
+            clean = '';
+        }
+        if (clean.length >= 1 && !['0','6'].includes(clean[0])) {
+            clean = '';
+        }
+        this.value = clean;
+        this.setSelectionRange(pos, pos);
+    });
+    el.addEventListener('paste', function(e) {
+        e.preventDefault();
+        var pasted = (e.clipboardData || window.clipboardData).getData('text');
+        var clean  = pasted.replace(/[^0-9]/g, '');
+        // Normalisasi awalan
+        if (clean.startsWith('0')) {
+            clean = '62' + clean.substring(1);
+        } else if (clean.startsWith('+62')) {
+            clean = '62' + clean.substring(3);
+        }
+        // Validasi awalan akhir
+        if (!clean.startsWith('08') && !clean.startsWith('628')) clean = '';
+        this.value = clean;
+    });
+}
+
+attachWaInputHandler(document.getElementById('edit_wa'));
+attachWaInputHandler(document.querySelector('input[name="wa_baru"]'));
+</script>
 </body>
 </html>

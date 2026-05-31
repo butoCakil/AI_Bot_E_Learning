@@ -54,7 +54,11 @@ if (strpos($content_type, 'multipart') !== false && ($_POST['aksi'] ?? '') === '
             'nis'      => $nis,
             'nama'     => $nama,
             'kelas'    => trim($row['C'] ?? ''),
-            'nomor_wa' => trim($row['D'] ?? '') ?: null,
+            'nomor_wa' => (function($n) {
+                $n = preg_replace('/[^0-9]/', '', $n);
+                if (str_starts_with($n, '0')) $n = '62' . substr($n, 1);
+                return $n ?: null;
+            })(trim($row['D'] ?? '')),
         ];
     }
 
@@ -85,7 +89,11 @@ if (strpos($content_type, 'application/json') !== false) {
         $nis      = trim($row['nis'] ?? '');
         $nama     = trim($row['nama'] ?? '');
         $kelas    = trim($row['kelas'] ?? '');
-        $nomor_wa = $row['nomor_wa'] ?: null;
+        $nomor_wa = $row['nomor_wa'] ? (function($n) {
+            $n = preg_replace('/[^0-9]/', '', $n);
+            if (str_starts_with($n, '0')) $n = '62' . substr($n, 1);
+            return $n ?: null;
+        })($row['nomor_wa']) : null;
 
         if ($nis === '') {
             $gagal[] = "Baris $no: NIS kosong.";
