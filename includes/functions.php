@@ -152,6 +152,8 @@ function hapus_akun_siswa(int $id): void {
     $pdo = db();
     $pdo->prepare("DELETE FROM activity_log WHERE user_id = ?")->execute([$id]);
     $pdo->prepare("DELETE FROM pre_test_results WHERE user_id = ?")->execute([$id]);
+    $pdo->prepare("DELETE FROM post_test_results WHERE user_id = ?")->execute([$id]);
+    $pdo->prepare("DELETE FROM jobsheet_submissions WHERE user_id = ?")->execute([$id]);
     $pdo->prepare("DELETE FROM wa_sessions WHERE user_id = ?")->execute([$id]);
     $pdo->prepare("DELETE FROM users WHERE id = ?")->execute([$id]);
 }
@@ -269,16 +271,16 @@ function cek_akses_posttest(int $user_id): array {
 // ── Hitung N-Gain ────────────────────────────────────────────────
 function hitung_ngain(int $skor_pre, int $skor_post, int $skor_maks = 12): array {
     if ($skor_maks - $skor_pre === 0) {
-        return ['ngain' => 1.0, 'kategori' => 'Tinggi'];
+        return ['ngain' => 1.0, 'kategori' => 'Tinggi', 'warna' => '#27ae60'];
     }
     $ngain = ($skor_post - $skor_pre) / ($skor_maks - $skor_pre);
     $ngain = round($ngain, 4);
 
-    if ($ngain > 0.7)       $kategori = 'Tinggi';
-    elseif ($ngain >= 0.3)  $kategori = 'Sedang';
-    else                    $kategori = 'Rendah';
+    if ($ngain > 0.7)       { $kategori = 'Tinggi'; $warna = '#27ae60'; }
+    elseif ($ngain >= 0.3)  { $kategori = 'Sedang'; $warna = '#e67e22'; }
+    else                    { $kategori = 'Rendah'; $warna = '#e74c3c'; }
 
-    return ['ngain' => $ngain, 'kategori' => $kategori];
+    return ['ngain' => $ngain, 'kategori' => $kategori, 'warna' => $warna];
 }
 
 // ── Topik Functions ──────────────────────────────────────
