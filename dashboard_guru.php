@@ -479,8 +479,14 @@ tr:hover td { background: #fafbff; }
                     <label>Kelas</label>
                     <select name="kelas_baru">
                         <option value="">— Pilih —</option>
-                        <option value="XI TEI">XI TEI</option>
-                        <option value="XII TEI">XII TEI</option>
+                        <option value="XI TE 1">XI TE 1</option>
+                        <option value="XI TE 2">XI TE 2</option>
+                        <option value="XI TE 3">XI TE 3</option>
+                        <option value="XI TE 4">XI TE 4</option>
+                        <option value="XII TE 1">XII TE 1</option>
+                        <option value="XII TE 2">XII TE 2</option>
+                        <option value="XII TE 3">XII TE 3</option>
+                        <option value="XII TE 4">XII TE 4</option>
                     </select>
                 </div>
                 <div class="form-group"><label>Nomor WA</label><input type="text" name="wa_baru" placeholder="628xxx"></div>
