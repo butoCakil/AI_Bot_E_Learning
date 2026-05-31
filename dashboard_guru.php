@@ -59,6 +59,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi'])) {
         set_pengaturan('wa_ai_model',    trim($_POST['wa_ai_model']    ?? 'llama-3.1-8b-instant'));
         set_pengaturan('wa_ai_prompt',   trim($_POST['wa_ai_prompt']   ?? ''));
         $pesan_akun = '✓ Pengaturan AI berhasil disimpan.';
+    } elseif ($_POST['aksi'] === 'setting_wa_gateway') {
+        set_pengaturan('wa_bot_nomor',    trim($_POST['wa_bot_nomor']    ?? ''));
+        $pesan_akun = '✓ Konfigurasi WA Gateway berhasil disimpan.';
     }
 }
 
@@ -980,21 +983,78 @@ function prosesImport(hasilDiv, total) {
 
     <!-- STATUS WA BOT -->
     <div class="card">
-        <div class="card-title">📱 Status WA Bot</div>
-        <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px">
-            <div style="padding:12px 20px;background:#e8f8f0;border-radius:10px;border:1px solid #c3e6cb;flex:1;min-width:200px">
-                <div style="font-size:12px;color:#666;margin-bottom:4px">Nomor Bot</div>
+        <div class="card-title">📱 Status & Konfigurasi WA Bot</div>
+
+        <!-- Status ringkas -->
+        <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:20px">
+            <div style="padding:12px 20px;background:#e8f8f0;border-radius:10px;border:1px solid #c3e6cb;flex:1;min-width:180px">
+                <div style="font-size:11px;color:#666;margin-bottom:4px">Nomor Bot</div>
                 <div style="font-weight:700;color:#155724"><?= get_pengaturan('wa_bot_nomor', '-') ?></div>
             </div>
-            <div style="padding:12px 20px;background:#e8f4fd;border-radius:10px;border:1px solid #b8daff;flex:1;min-width:200px">
-                <div style="font-size:12px;color:#666;margin-bottom:4px">Model AI Aktif</div>
+            <div style="padding:12px 20px;background:#e8f4fd;border-radius:10px;border:1px solid #b8daff;flex:1;min-width:180px">
+                <div style="font-size:11px;color:#666;margin-bottom:4px">Model AI Aktif</div>
                 <div style="font-weight:700;color:#0f3460"><?= get_pengaturan('wa_ai_model', 'llama-3.1-8b-instant') ?></div>
             </div>
-            <div style="padding:12px 20px;background:#fff8e1;border-radius:10px;border:1px solid #ffe082;flex:1;min-width:200px">
-                <div style="font-size:12px;color:#666;margin-bottom:4px">Provider</div>
+            <div style="padding:12px 20px;background:#fff8e1;border-radius:10px;border:1px solid #ffe082;flex:1;min-width:180px">
+                <div style="font-size:11px;color:#666;margin-bottom:4px">Provider</div>
                 <div style="font-weight:700;color:#e67e22"><?= strtoupper(get_pengaturan('wa_ai_provider', 'groq')) ?></div>
             </div>
         </div>
+
+        <!-- Webhook URL -->
+        <div style="margin-bottom:20px">
+            <div style="font-size:13px;font-weight:600;color:#444;margin-bottom:8px">🔗 URL Webhook Fonnte</div>
+            <div style="display:flex;gap:8px;align-items:center">
+                <input type="text" id="webhook_url" readonly value="<?= APP_URL ?>/api/wa_webhook.php"
+                    style="flex:1;padding:9px 12px;border:2px solid #e0e0e0;border-radius:8px;font-size:13px;font-family:monospace;background:#f9f9f9;color:#333">
+                <button onclick="copyWebhook()"
+                    style="padding:9px 16px;background:#0f3460;color:#fff;border:none;border-radius:8px;font-size:13px;cursor:pointer;white-space:nowrap"
+                    id="btn_copy_webhook">📋 Copy</button>
+            </div>
+            <div style="font-size:11px;color:#888;margin-top:4px">Paste URL ini di pengaturan Webhook Fonnte → Device → Edit</div>
+        </div>
+
+        <!-- Form konfigurasi WA Gateway -->
+        <form method="POST">
+            <input type="hidden" name="aksi" value="setting_wa_gateway">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+                <div>
+                    <label style="font-size:13px;font-weight:600;color:#444;display:block;margin-bottom:6px">Nomor Bot (format: 628xxx)</label>
+                    <input type="text" name="wa_bot_nomor" value="<?= htmlspecialchars(get_pengaturan('wa_bot_nomor', '')) ?>"
+                        placeholder="6285111308087"
+                        style="width:100%;padding:9px 12px;border:2px solid #e0e0e0;border-radius:8px;font-size:13px">
+                </div>
+                <div>
+                    <label style="font-size:13px;font-weight:600;color:#444;display:block;margin-bottom:6px">Device ID / Token Fonnte</label>
+                    <?php
+                    $tok = defined('FONNTE_TOKEN') ? FONNTE_TOKEN : '';
+                    $tok_sensor = $tok ? (substr($tok,0,4) . str_repeat('*', max(0,strlen($tok)-8)) . substr($tok,-4)) : '-';
+                    ?>
+                    <input type="text" readonly value="<?= htmlspecialchars($tok_sensor) ?>"
+                        style="width:100%;padding:9px 12px;border:2px solid #e0e0e0;border-radius:8px;font-size:13px;background:#f9f9f9;color:#666;font-family:monospace">
+                    <div style="font-size:11px;color:#888;margin-top:3px">Token aktif dari config.php (tersensor). Ganti via SSH.</div>
+                </div>
+            </div>
+            <button type="submit"
+                style="padding:9px 20px;background:#27ae60;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">
+                💾 Simpan Konfigurasi Gateway
+            </button>
+        </form>
+
+        <script>
+        function copyWebhook() {
+            const url = document.getElementById('webhook_url').value;
+            navigator.clipboard.writeText(url).then(() => {
+                const btn = document.getElementById('btn_copy_webhook');
+                btn.textContent = '✅ Tersalin!';
+                btn.style.background = '#27ae60';
+                setTimeout(() => {
+                    btn.textContent = '📋 Copy';
+                    btn.style.background = '#0f3460';
+                }, 2000);
+            });
+        }
+        </script>
     </div>
 
     <!-- PENGATURAN MODEL AI -->
