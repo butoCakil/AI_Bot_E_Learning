@@ -171,6 +171,8 @@ $warna_profil = [
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Dashboard Guru — AdaptLearn PRE</title>
 <style>
+* { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: 'Segoe UI', sans-serif; background: #f0f2f5; min-height: 100vh; }
 
@@ -204,7 +206,10 @@ body { font-family: 'Segoe UI', sans-serif; background: #f0f2f5; min-height: 100
     top: 56px;
     z-index: 99;
     box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    scrollbar-width: none;
+    -ms-overflow-style: none;
 }
+.tab-nav::-webkit-scrollbar { display: none; }
 .tab-btn {
     padding: 14px 20px;
     font-size: 13px;

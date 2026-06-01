@@ -90,6 +90,8 @@ $progress    = round(($no_sekarang / $total) * 100);
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Post-Test — AdaptLearn PRE</title>
 <style>
+* { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body {
     font-family: 'Segoe UI', sans-serif;

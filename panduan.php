@@ -6,6 +6,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Panduan AdaptLearn PRE — SMK Negeri Bansari</title>
 <style>
+* { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+
 :root{--navy:#0f3460;--green:#27ae60;--bg:#f4f6fb;--card:#fff;--text:#2c3e50;--muted:#7f8c8d;--border:#e0e6ed;--shadow:0 2px 12px rgba(15,52,96,.09);}
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:'Segoe UI',sans-serif;background:var(--bg);color:var(--text);font-size:15px;line-height:1.7;}

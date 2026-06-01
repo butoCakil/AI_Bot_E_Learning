@@ -153,6 +153,8 @@ tinymce.init({
 });
 </script>
 <style>
+* { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: 'Segoe UI', sans-serif; background: #f0f2f5; min-height: 100vh; }
 .topbar { background: #0f3460; color: #fff; padding: 0 24px; height: 56px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }

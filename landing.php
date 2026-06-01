@@ -5,7 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>AdaptLearn PRE — SMK Negeri Bansari</title>
 <style>
+* { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+
 * { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { overflow: hidden; height: 100%; }
 body {
     font-family: 'Segoe UI', sans-serif;
     background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
@@ -13,40 +16,40 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 20px;
+    padding: 12px;
 }
-.wrapper { width: 100%; max-width: 820px; }
+.wrapper { width: 100%; max-width: 780px; }
 
 /* HEADER */
-.header { text-align: center; margin-bottom: 48px; color: #fff; }
-.header h1 { font-size: 36px; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 8px; }
+.header { text-align: center; margin-bottom: 20px; color: #fff; }
+.header h1 { font-size: 28px; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 6px; }
 .header h1 span { color: #64b5f6; }
-.header p { font-size: 16px; opacity: 0.75; margin-bottom: 16px; }
-.badge { display: inline-block; background: rgba(255,255,255,0.15); color: #fff; font-size: 12px; font-weight: 600; padding: 5px 16px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.2); }
+.header p { font-size: 13px; opacity: 0.75; margin-bottom: 10px; }
+.badge { display: inline-block; background: rgba(255,255,255,0.15); color: #fff; font-size: 11px; font-weight: 600; padding: 4px 14px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.2); }
 
 /* CARDS */
-.cards { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 32px; }
+.cards { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
 .card {
     background: #fff;
-    border-radius: 20px;
-    padding: 36px 32px;
+    border-radius: 16px;
+    padding: 20px 24px;
     text-align: center;
     box-shadow: 0 20px 60px rgba(0,0,0,0.3);
     transition: transform 0.2s;
 }
 .card:hover { transform: translateY(-4px); }
-.card-icon { font-size: 48px; margin-bottom: 16px; }
-.card h2 { font-size: 20px; color: #1a1a2e; margin-bottom: 8px; }
-.card p { font-size: 13px; color: #777; line-height: 1.6; margin-bottom: 24px; }
-.card ul { text-align: left; font-size: 13px; color: #555; margin-bottom: 28px; padding-left: 0; list-style: none; }
-.card ul li { padding: 5px 0; border-bottom: 1px solid #f0f0f0; }
+.card-icon { font-size: 36px; margin-bottom: 10px; }
+.card h2 { font-size: 17px; color: #1a1a2e; margin-bottom: 6px; }
+.card p { font-size: 12px; color: #777; line-height: 1.5; margin-bottom: 14px; }
+.card ul { text-align: left; font-size: 12px; color: #555; margin-bottom: 16px; padding-left: 0; list-style: none; }
+.card ul li { padding: 4px 0; border-bottom: 1px solid #f0f0f0; }
 .card ul li:last-child { border-bottom: none; }
 .card ul li::before { content: '✓ '; color: #27ae60; font-weight: 700; }
 .btn {
     display: block;
-    padding: 14px;
-    border-radius: 12px;
-    font-size: 15px;
+    padding: 11px;
+    border-radius: 10px;
+    font-size: 13px;
     font-weight: 700;
     text-decoration: none;
     transition: all 0.2s;
