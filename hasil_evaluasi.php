@@ -1,356 +1,225 @@
 <?php
+/* ============================================================
+   Hasil & Pembahasan Evaluasi — AdaptLearn PRE
+   ------------------------------------------------------------
+   PERUBAHAN dari versi lama:
+   Dulu membaca $_SESSION['hasil_evaluasi'] yang hanya terisi
+   tepat setelah submit — sehingga halaman ini tidak bisa dibuka
+   ulang. Sekarang membaca dari tabel `evaluasi_results`, jadi
+   pembahasan bisa diakses kapan saja lewat evaluasi.php.
+
+   Parameter: ?konten=<content_id>
+   ============================================================ */
+
 session_start();
 require_once 'config/config.php';
 require_once 'includes/functions.php';
 
-if (empty($_SESSION['hasil_evaluasi'])) {
-    header('Location: materi.php');
-    exit;
-}
 require_login();
 
-$hasil = $_SESSION['hasil_evaluasi'];
-$topik = $hasil['topik'];
-$skor = $hasil['skor'];
-$total = $hasil['total'];
-$persentase = $hasil['persentase'];
-$hasil_soal = $hasil['hasil_soal'];
-$profil_gabungan = $hasil['profil_gabungan'];
-$nama = $_SESSION['nama'];
+$user_id = $_SESSION['user_id'];
+$pdo     = db();
 
-$topik_label = get_topik_list();
+// ── Tentukan evaluasi yang dibuka ────────────────────────────
+$content_id = isset($_GET['konten']) ? (int) $_GET['konten'] : 0;
 
-$warna = $persentase >= 80 ? '#27ae60' : ($persentase >= 60 ? '#2980b9' : '#e74c3c');
-$pesan = $persentase >= 80
-    ? 'Bagus sekali! Kamu memahami materi ini dengan baik.'
-    : ($persentase >= 60
-        ? 'Cukup baik. Ada beberapa konsep yang perlu diperkuat.'
-        : 'Perlu belajar lebih lanjut. Coba baca ulang materi sebelum lanjut.');
+if ($content_id > 0) {
+    $stmt = $pdo->prepare("SELECT * FROM evaluasi_results WHERE user_id = ? AND content_id = ? LIMIT 1");
+    $stmt->execute([$user_id, $content_id]);
+} else {
+    // Tanpa parameter: tampilkan hasil terakhir
+    $stmt = $pdo->prepare("SELECT * FROM evaluasi_results WHERE user_id = ? ORDER BY updated_at DESC LIMIT 1");
+    $stmt->execute([$user_id]);
+}
+$hasil = $stmt->fetch();
 
-// Hapus session evaluasi agar tidak muncul lagi
-unset($_SESSION['hasil_evaluasi']);
+if (!$hasil) {
+    header('Location: evaluasi.php');
+    exit;
+}
 
-// Tentukan navigasi berikutnya setelah evaluasi
-$topik_keys   = array_keys($topik_label);
-$topik_idx    = array_search($topik, $topik_keys);
-$next_topik   = $topik_keys[$topik_idx + 1] ?? null;
+$content_id  = (int) $hasil['content_id'];
+$topik       = $hasil['topik'];
+$skor        = (int) $hasil['skor'];
+$total       = (int) $hasil['total'];
+$persentase  = (int) $hasil['persentase'];
+$percobaan   = (int) $hasil['percobaan'];
+$hasil_soal  = json_decode($hasil['hasil_soal'], true) ?? [];
 
-// Cari apakah ada konten setelah evaluasi di topik ini (berdasarkan profil siswa)
-$pdo          = db();
-$user_id_nav  = $_SESSION['user_id'];
-$profil_nav   = $pdo->prepare("SELECT profil_gabungan FROM pre_test_results WHERE user_id = ? ORDER BY created_at DESC LIMIT 1");
-$profil_nav->execute([$user_id_nav]);
-$profil_nav   = $profil_nav->fetchColumn();
+$topik_list  = get_topik_list();
+$topik_nama  = $topik_list[$topik] ?? $topik;
 
-$next_konten_id   = null;
-$next_konten_topik = null;
+// Judul evaluasi
+$stmt_j = $pdo->prepare("SELECT judul FROM `content` WHERE id = ? LIMIT 1");
+$stmt_j->execute([$content_id]);
+$judul_evaluasi = $stmt_j->fetchColumn() ?: 'Evaluasi';
 
-if ($profil_nav) {
-    $rule_nav = $pdo->prepare("SELECT urutan_content FROM adaptation_rules WHERE profil_gabungan = ? AND topik = ? LIMIT 1");
-    $rule_nav->execute([$profil_nav, $topik]);
-    $urutan_nav = json_decode($rule_nav->fetchColumn(), true) ?? [];
+// ── Pesan & warna berdasarkan capaian ────────────────────────
+if ($persentase >= 80) {
+    $status_kelas = 'buka';
+    $status_ikon  = 'icon-party-popper';
+    $pesan = 'Bagus sekali. Kamu sudah memahami materi ini dengan baik.';
+} elseif ($persentase >= 60) {
+    $status_kelas = 'info';
+    $status_ikon  = 'icon-thumbs-up';
+    $pesan = 'Cukup baik. Masih ada beberapa konsep yang perlu diperkuat.';
+} else {
+    $status_kelas = 'kunci';
+    $status_ikon  = 'icon-book-open';
+    $pesan = 'Perlu belajar lagi. Coba baca ulang materinya, lalu kerjakan sekali lagi.';
+}
 
-    // Cari id konten evaluasi yang baru dikerjakan
-    if ($urutan_nav) {
-        $placeholders = implode(',', array_fill(0, count($urutan_nav), '?'));
-        $konten_nav   = $pdo->prepare("SELECT id, tipe FROM `content` WHERE id IN ($placeholders)");
-        $konten_nav->execute($urutan_nav);
-        $konten_map   = array_column($konten_nav->fetchAll(), 'tipe', 'id');
+// ── Navigasi: konten setelah evaluasi ini ────────────────────
+$profil = get_profil_siswa($user_id);
+$next_konten_id = null;
+$next_topik     = null;
 
-        // Susun ulang sesuai urutan, cari posisi evaluasi
-        $eval_pos = null;
-        $urutan_unik = array_unique($urutan_nav);
-        foreach ($urutan_unik as $pos => $cid) {
-            if (($konten_map[$cid] ?? '') === 'evaluasi') {
-                $eval_pos = $pos;
-                break;
-            }
-        }
+if ($profil) {
+    $rule = $pdo->prepare("SELECT urutan_content FROM adaptation_rules WHERE profil_gabungan = ? AND topik = ? LIMIT 1");
+    $rule->execute([$profil['profil_gabungan'], $topik]);
+    $urutan = array_values(array_unique(json_decode($rule->fetchColumn() ?: '[]', true) ?? []));
 
-        // Jika ada konten setelah evaluasi di topik ini
-        if ($eval_pos !== null && isset($urutan_unik[$eval_pos + 1])) {
-            $next_konten_id    = $urutan_unik[$eval_pos + 1];
-            $next_konten_topik = $topik;
-        }
+    $pos = array_search($content_id, $urutan);
+    if ($pos !== false && isset($urutan[$pos + 1])) {
+        $next_konten_id = (int) $urutan[$pos + 1];
     }
 }
+
+if (!$next_konten_id) {
+    $keys = array_keys($topik_list);
+    $idx  = array_search($topik, $keys);
+    $next_topik = ($idx !== false) ? ($keys[$idx + 1] ?? null) : null;
+}
+
+$page_title   = 'Hasil Evaluasi — AdaptLearn PRE';
+$topbar_aktif = 'evaluasi';
+include __DIR__ . '/includes/topbar_siswa.php';
 ?>
-<!DOCTYPE html>
-<html lang="id">
 
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hasil Evaluasi — AdaptLearn PRE</title>
-    <style>
-* { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+<div class="crumb">
+    <a href="home.php">Beranda</a>
+    <span class="sep">›</span>
+    <a href="evaluasi.php">Evaluasi</a>
+    <span class="sep">›</span>
+    <span class="now"><?= htmlspecialchars($topik_nama) ?></span>
+</div>
 
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
+<div class="wrap">
 
-        body {
-            font-family: 'Segoe UI', sans-serif;
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
-            min-height: 100vh;
-            padding: 30px 20px;
-        }
-
-        .container {
-            max-width: 640px;
-            margin: 0 auto;
-        }
-
-        .card {
-            background: #fff;
-            border-radius: 16px;
-            padding: 32px;
-            margin-bottom: 20px;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-            animation: fadeIn 0.4s ease;
-        }
-
-        @keyframes fadeIn {
-            from {
-                opacity: 0;
-                transform: translateY(12px);
-            }
-
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        .hasil-header {
-            text-align: center;
-            margin-bottom: 24px;
-        }
-
-        .skor-circle {
-            width: 100px;
-            height: 100px;
-            border-radius: 50%;
-            background:
-                <?= $warna ?>
-            ;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            margin: 0 auto 16px;
-            color: #fff;
-        }
-
-        .skor-angka {
-            font-size: 28px;
-            font-weight: 700;
-            line-height: 1;
-        }
-
-        .skor-label {
-            font-size: 11px;
-            opacity: 0.85;
-            margin-top: 2px;
-        }
-
-        .hasil-header h2 {
-            font-size: 20px;
-            color: #1a1a2e;
-            margin-bottom: 6px;
-        }
-
-        .hasil-header p {
-            font-size: 14px;
-            color: #666;
-        }
-
-        .pesan-box {
-            padding: 14px 18px;
-            border-radius: 10px;
-            font-size: 14px;
-            margin-bottom: 24px;
-            border-left: 4px solid
-                <?= $warna ?>
-            ;
-            background:
-                <?= $persentase >= 80 ? '#e8f8f0' : ($persentase >= 60 ? '#e8f4fd' : '#fde8e8') ?>
-            ;
-            color: #333;
-        }
-
-        .section-title {
-            font-size: 14px;
-            font-weight: 700;
-            color: #0f3460;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            margin-bottom: 14px;
-        }
-
-        .soal-item {
-            padding: 14px;
-            border-radius: 10px;
-            margin-bottom: 12px;
-            border: 1px solid #e0e0e0;
-        }
-
-        .soal-item.benar {
-            border-color: #a8e6cf;
-            background: #f0fff8;
-        }
-
-        .soal-item.salah {
-            border-color: #ffb3b3;
-            background: #fff5f5;
-        }
-
-        .soal-teks {
-            font-size: 14px;
-            font-weight: 600;
-            color: #1a1a2e;
-            margin-bottom: 10px;
-        }
-
-        .jawaban-info {
-            display: flex;
-            gap: 16px;
-            flex-wrap: wrap;
-            font-size: 13px;
-        }
-
-        .jwb-badge {
-            padding: 4px 10px;
-            border-radius: 6px;
-            font-weight: 600;
-        }
-
-        .jwb-benar {
-            background: #d4edda;
-            color: #155724;
-        }
-
-        .jwb-salah {
-            background: #f8d7da;
-            color: #721c24;
-        }
-
-        .jwb-kunci {
-            background: #d1ecf1;
-            color: #0c5460;
-        }
-
-        .status-icon {
-            font-size: 16px;
-            float: right;
-        }
-
-        .nav-buttons {
-            display: flex;
-            gap: 12px;
-            flex-wrap: wrap;
-        }
-
-        .btn {
-            flex: 1;
-            padding: 13px 20px;
-            border-radius: 10px;
-            font-size: 14px;
-            font-weight: 600;
-            cursor: pointer;
-            text-decoration: none;
-            border: none;
-            text-align: center;
-            transition: all 0.2s;
-        }
-
-        .btn-primary {
-            background: #0f3460;
-            color: #fff;
-        }
-
-        .btn-primary:hover {
-            background: #16213e;
-        }
-
-        .btn-success {
-            background: #27ae60;
-            color: #fff;
-        }
-
-        .btn-success:hover {
-            background: #219a52;
-        }
-
-        .btn-outline {
-            background: transparent;
-            border: 2px solid #0f3460;
-            color: #0f3460;
-        }
-
-        .btn-outline:hover {
-            background: #f0f7ff;
-        }
-    </style>
-</head>
-
-<body>
-    <div class="container">
-<?php $topbar_aktif="materi"; include __DIR__ . "/includes/topbar_siswa.php"; ?>
-
-        <div class="card">
-            <div class="hasil-header">
-                <div class="skor-circle">
-                    <span class="skor-angka"><?= $persentase ?>%</span>
-                    <span class="skor-label"><?= $skor ?>/<?= $total ?></span>
+    <!-- RINGKASAN SKOR -->
+    <div class="card tengah">
+        <div style="width:96px;height:96px;border-radius:50%;margin:4px auto 16px;display:grid;place-items:center;
+                    background:<?= $persentase >= 80 ? 'var(--teal-muda)' : ($persentase >= 60 ? 'var(--biru-muda)' : 'var(--coral-muda)') ?>">
+            <div>
+                <div style="font-size:28px;font-weight:800;letter-spacing:-1px;line-height:1;
+                            color:<?= $persentase >= 80 ? 'var(--teal)' : ($persentase >= 60 ? 'var(--biru)' : 'var(--coral)') ?>">
+                    <?= $persentase ?>%
                 </div>
-                <h2>Hasil Evaluasi — <?= htmlspecialchars($topik_label[$topik] ?? $topik) ?></h2>
-                <p>Halo <strong><?= htmlspecialchars($nama) ?></strong>, berikut hasil evaluasimu.</p>
-            </div>
-
-            <div class="pesan-box"><?= htmlspecialchars($pesan) ?></div>
-
-            <div class="section-title">Pembahasan per soal</div>
-
-            <?php foreach ($hasil_soal as $i => $item): ?>
-                <div class="soal-item <?= $item['benar'] ? 'benar' : 'salah' ?>">
-                    <span class="status-icon"><?= $item['benar'] ? '✓' : '✗' ?></span>
-                    <div class="soal-teks"><?= ($i + 1) ?>. <?= htmlspecialchars($item['soal']) ?></div>
-                    <div class="jawaban-info">
-                        <span>
-                            Jawabanmu:
-                            <span class="jwb-badge <?= $item['benar'] ? 'jwb-benar' : 'jwb-salah' ?>">
-                                <?= htmlspecialchars($item['jawaban']) ?>
-                            </span>
-                        </span>
-                        <?php if (!$item['benar']): ?>
-                            <span>
-                                Kunci:
-                                <span class="jwb-badge jwb-kunci"><?= htmlspecialchars($item['kunci']) ?></span>
-                            </span>
-                        <?php endif; ?>
-                    </div>
-                </div>
-            <?php endforeach; ?>
-
-            <div class="nav-buttons" style="margin-top:24px">
-                <a href="/materi.php?topik=<?= urlencode($topik) ?>" class="btn btn-outline">← Kembali ke Materi</a>
-
-                <?php if ($next_konten_id): ?>
-                    <a href="/materi.php?topik=<?= urlencode($next_konten_topik) ?>&konten=<?= $next_konten_id ?>"
-                        class="btn btn-primary">Materi Berikutnya →</a>
-                <?php elseif ($next_topik): ?>
-                    <a href="/materi.php?topik=<?= urlencode($next_topik) ?>"
-                        class="btn btn-primary">Topik Berikutnya →</a>
-                <?php else: ?>
-                    <a href="/materi.php?finish=1" class="btn btn-success">🏁 Selesai Semua Materi</a>
-                <?php endif; ?>
+                <div style="font-size:11px;font-weight:700;color:var(--abu-muda);margin-top:3px"><?= $skor ?>/<?= $total ?> benar</div>
             </div>
         </div>
 
+        <h2 style="font-size:18px;font-weight:800;letter-spacing:-.3px;line-height:1.4">
+            <?= htmlspecialchars($judul_evaluasi) ?>
+        </h2>
+        <p style="font-size:12.5px;color:var(--abu-muda);font-weight:600;margin-top:4px">
+            <?= htmlspecialchars($topik_nama) ?>
+            <?php if ($percobaan > 1): ?>
+                · percobaan ke-<?= $percobaan ?>
+            <?php endif; ?>
+        </p>
     </div>
-</body>
 
+    <!-- PESAN -->
+    <div class="pt <?= $status_kelas ?>">
+        <div class="pt-ic"><i class="<?= $status_ikon ?>"></i></div>
+        <div>
+            <b>
+                <?php if ($persentase >= 80): ?>Hasil bagus
+                <?php elseif ($persentase >= 60): ?>Sudah cukup baik
+                <?php else: ?>Perlu diulang
+                <?php endif; ?>
+            </b>
+            <p style="margin-bottom:0"><?= htmlspecialchars($pesan) ?></p>
+        </div>
+    </div>
+
+    <!-- PEMBAHASAN -->
+    <div class="sect"><i class="icon-list-checks"></i> Pembahasan per soal</div>
+
+    <?php foreach ($hasil_soal as $i => $item): ?>
+        <div class="card" style="border-left:4px solid <?= $item['benar'] ? 'var(--teal)' : 'var(--coral)' ?>">
+            <div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:12px">
+                <span style="flex-shrink:0;width:24px;height:24px;border-radius:50%;display:grid;place-items:center;
+                             font-size:12px;color:#fff;background:<?= $item['benar'] ? 'var(--teal)' : 'var(--coral)' ?>">
+                    <i class="<?= $item['benar'] ? 'icon-check' : 'icon-x' ?>"></i>
+                </span>
+                <div style="font-size:13.5px;font-weight:700;line-height:1.55;flex:1">
+                    <?= ($i + 1) ?>. <?= htmlspecialchars($item['soal']) ?>
+                </div>
+            </div>
+
+            <?php if (!empty($item['opsi']) && is_array($item['opsi'])): ?>
+                <ul class="opsi" style="margin-bottom:10px">
+                    <?php foreach ($item['opsi'] as $huruf => $teks): ?>
+                        <?php
+                        $ini_jawaban = strtoupper($huruf) === strtoupper($item['jawaban']);
+                        $ini_kunci   = strtoupper($huruf) === strtoupper($item['kunci']);
+
+                        $gaya = 'background:var(--kartu);border-color:var(--garis)';
+                        if ($ini_kunci) {
+                            $gaya = 'background:var(--teal-muda);border-color:var(--teal)';
+                        } elseif ($ini_jawaban) {
+                            $gaya = 'background:var(--coral-muda);border-color:var(--coral)';
+                        }
+                        ?>
+                        <li>
+                            <div style="display:flex;align-items:center;gap:10px;padding:10px 13px;border:2px solid;border-radius:var(--r-sm);font-size:13px;<?= $gaya ?>">
+                                <b style="flex-shrink:0"><?= htmlspecialchars($huruf) ?>.</b>
+                                <span style="flex:1"><?= htmlspecialchars($teks) ?></span>
+                                <?php if ($ini_kunci): ?>
+                                    <span class="tag ok" style="flex-shrink:0"><i class="icon-check"></i> Kunci</span>
+                                <?php elseif ($ini_jawaban): ?>
+                                    <span class="tag" style="flex-shrink:0;background:var(--coral-muda);color:var(--coral)">
+                                        <i class="icon-x"></i> Jawabanmu
+                                    </span>
+                                <?php endif; ?>
+                            </div>
+                        </li>
+                    <?php endforeach; ?>
+                </ul>
+            <?php else: ?>
+                <div class="tags">
+                    <span class="tag <?= $item['benar'] ? 'ok' : '' ?>" style="<?= $item['benar'] ? '' : 'background:var(--coral-muda);color:var(--coral)' ?>">
+                        Jawabanmu: <?= htmlspecialchars($item['jawaban'] ?: '—') ?>
+                    </span>
+                    <?php if (!$item['benar']): ?>
+                        <span class="tag ok">Kunci: <?= htmlspecialchars($item['kunci']) ?></span>
+                    <?php endif; ?>
+                </div>
+            <?php endif; ?>
+        </div>
+    <?php endforeach; ?>
+
+    <!-- NAVIGASI -->
+    <div class="nav-btn" style="margin-top:4px">
+        <a href="evaluasi.php" class="btn btn-2"><i class="icon-arrow-left"></i> Rekap evaluasi</a>
+
+        <?php if ($next_konten_id): ?>
+            <a href="materi.php?topik=<?= urlencode($topik) ?>&konten=<?= $next_konten_id ?>" class="btn btn-1">
+                Materi berikutnya <i class="icon-arrow-right"></i>
+            </a>
+        <?php elseif ($next_topik): ?>
+            <a href="materi.php?topik=<?= urlencode($next_topik) ?>" class="btn btn-1">
+                Topik berikutnya <i class="icon-arrow-right"></i>
+            </a>
+        <?php else: ?>
+            <a href="materi.php?finish=1" class="btn btn-3"><i class="icon-flag"></i> Selesai semua materi</a>
+        <?php endif; ?>
+    </div>
+
+</div>
+
+<?php include __DIR__ . '/includes/bottomnav_siswa.php'; ?>
+</body>
 </html>

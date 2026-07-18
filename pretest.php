@@ -4,15 +4,18 @@ require_once 'config/config.php';
 require_once 'config/soal_pretest.php';
 require_once 'includes/functions.php';
 
-// Guard — harus sudah registrasi
 require_login();
+
+// Error dari percobaan sebelumnya
+$pretest_error = $_SESSION['pretest_error'] ?? null;
+unset($_SESSION['pretest_error']);
 
 // Inisialisasi sesi pretest
 if (empty($_SESSION['pretest_mulai'])) {
-    $_SESSION['pretest_mulai']    = true;
-    $_SESSION['soal_no']          = 0;
-    $_SESSION['jawaban_pngt']     = [];
-    $_SESSION['jawaban_sjt']      = [];
+    $_SESSION['pretest_mulai'] = true;
+    $_SESSION['soal_no']       = 0;
+    $_SESSION['jawaban_pngt']  = [];
+    $_SESSION['jawaban_sjt']   = [];
 }
 
 // Gabung semua soal: 12 pengetahuan + 8 SJT
@@ -25,7 +28,7 @@ foreach (SOAL_SJT as $s) {
 }
 $total = count($semua_soal); // 20
 
-// Proses jawaban
+// ── Proses jawaban ───────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['jawaban'])) {
     $no      = (int) $_POST['soal_no'];
     $jawaban = strtoupper(trim($_POST['jawaban']));
@@ -39,26 +42,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['jawaban'])) {
 
     $_SESSION['soal_no'] = $no + 1;
 
-    // Semua soal selesai — kirim ke API
+    // Semua soal selesai — proses langsung (tanpa cURL)
     if ($_SESSION['soal_no'] >= $total) {
-        $ch = curl_init('http://localhost/api/pretest.php');
-        curl_setopt_array($ch, [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_POST           => true,
-            CURLOPT_POSTFIELDS     => json_encode([
-                'user_id'              => $_SESSION['user_id'],
-                'jawaban_pengetahuan'  => $_SESSION['jawaban_pngt'],
-                'jawaban_sjt'          => $_SESSION['jawaban_sjt'],
-            ]),
-            CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+
+        $user_id_pt   = (int) $_SESSION['user_id'];
+        $jawaban_pngt = $_SESSION['jawaban_pngt'];
+        $jawaban_sjt  = $_SESSION['jawaban_sjt'];
+
+        if (count($jawaban_pngt) !== 12 || count($jawaban_sjt) !== 8) {
+            $_SESSION['pretest_error'] = 'Jumlah jawaban tidak sesuai. Silakan ulangi pre-test.';
+            unset($_SESSION['pretest_mulai'], $_SESSION['soal_no'],
+                  $_SESSION['jawaban_pngt'], $_SESSION['jawaban_sjt']);
+            header('Location: pretest.php');
+            exit;
+        }
+
+        $skor_pt     = hitung_skor($jawaban_pngt, KUNCI_JAWABAN);
+        $klasifikasi = classify_siswa($jawaban_sjt, $skor_pt);
+
+        if ($klasifikasi['status'] !== 'ok') {
+            error_log('Pretest klasifikasi gagal (user ' . $user_id_pt . '): ' . $klasifikasi['message']);
+            $_SESSION['pretest_error'] = 'Sistem gagal memproses hasil pre-test. Hubungi guru atau coba lagi.';
+            unset($_SESSION['pretest_mulai'], $_SESSION['soal_no'],
+                  $_SESSION['jawaban_pngt'], $_SESSION['jawaban_sjt']);
+            header('Location: pretest.php');
+            exit;
+        }
+
+        $pretest_id = simpan_pretest($user_id_pt, $jawaban_pngt, $jawaban_sjt, $skor_pt, $klasifikasi);
+
+        log_aktivitas($user_id_pt, 'pretest', null, null, [
+            'pretest_id'      => $pretest_id,
+            'skor'            => $skor_pt,
+            'profil_gabungan' => $klasifikasi['profil_gabungan'],
         ]);
-        $response = curl_exec($ch);
-        curl_close($ch);
 
-        $result = json_decode($response, true);
-        $_SESSION['hasil_pretest'] = $result;
+        $_SESSION['hasil_pretest'] = [
+            'status'          => 'ok',
+            'pretest_id'      => $pretest_id,
+            'skor'            => $skor_pt,
+            'level'           => $klasifikasi['level'],
+            'profil_learning' => $klasifikasi['profil_learning'],
+            'profil_gabungan' => $klasifikasi['profil_gabungan'],
+            'probabilitas'    => $klasifikasi['probabilitas'],
+        ];
 
-        // Reset sesi pretest
         unset($_SESSION['pretest_mulai'], $_SESSION['soal_no'],
               $_SESSION['jawaban_pngt'], $_SESSION['jawaban_sjt']);
 
@@ -70,209 +98,101 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['jawaban'])) {
     exit;
 }
 
-$no_sekarang = $_SESSION['soal_no'];
-$soal        = $semua_soal[$no_sekarang];
-$progress    = round(($no_sekarang / $total) * 100);
-$bagian_label = $soal['bagian'] === 'pengetahuan'
-    ? 'Bagian A — Pengetahuan'
-    : 'Bagian B — Skenario Belajar';
+$no_sekarang  = $_SESSION['soal_no'];
+$soal         = $semua_soal[$no_sekarang];
+$progress     = round(($no_sekarang / $total) * 100);
+$is_sjt       = $soal['bagian'] === 'sjt';
+$bagian_label = $is_sjt ? 'Bagian B — Skenario belajar' : 'Bagian A — Pengetahuan';
+$terakhir     = ($no_sekarang + 1) >= $total;
+
+$page_title   = 'Pre-Test — AdaptLearn PRE';
+$tanpa_nav    = true;
+include __DIR__ . '/includes/topbar_siswa.php';
 ?>
-<!DOCTYPE html>
-<html lang="id">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Pre-Test — AdaptLearn PRE</title>
-<style>
-* { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    font-family: 'Segoe UI', sans-serif;
-    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 20px;
-  }
-  .header {
-    width: 100%;
-    max-width: 600px;
-    margin-bottom: 16px;
-  }
-  .header-top {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 8px;
-  }
-  .header-top span {
-    color: #fff;
-    font-size: 13px;
-    opacity: 0.8;
-  }
-  .progress-bar {
-    width: 100%;
-    height: 6px;
-    background: rgba(255,255,255,0.2);
-    border-radius: 10px;
-    overflow: hidden;
-  }
-  .progress-fill {
-    height: 100%;
-    background: #4ecdc4;
-    border-radius: 10px;
-    transition: width 0.4s ease;
-    width: <?= $progress ?>%;
-  }
-  .card {
-    background: #fff;
-    border-radius: 16px;
-    padding: 36px;
-    width: 100%;
-    max-width: 600px;
-    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-    animation: fadeIn 0.3s ease;
-  }
-  @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(10px); }
-    to   { opacity: 1; transform: translateY(0); }
-  }
-  .bagian-label {
-    font-size: 11px;
-    font-weight: 700;
-    color: #0f3460;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    margin-bottom: 8px;
-  }
-  .nomor-soal {
-    font-size: 13px;
-    color: #999;
-    margin-bottom: 16px;
-  }
-  .pertanyaan {
-    font-size: 16px;
-    font-weight: 600;
-    color: #1a1a2e;
-    line-height: 1.6;
-    margin-bottom: 28px;
-  }
-  .opsi-list {
-    list-style: none;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-  }
-  .opsi-item label {
-    display: flex;
-    align-items: flex-start;
-    gap: 12px;
-    padding: 14px 16px;
-    border: 2px solid #e8e8e8;
-    border-radius: 10px;
-    cursor: pointer;
-    transition: all 0.2s;
-    font-size: 14px;
-    color: #333;
-    line-height: 1.5;
-  }
-  .opsi-item input[type="radio"] { display: none; }
-  .opsi-item label:hover {
-    border-color: #0f3460;
-    background: #f0f7ff;
-  }
-  .opsi-item input[type="radio"]:checked + label {
-    border-color: #0f3460;
-    background: #e8f4fd;
-    font-weight: 600;
-  }
-  .huruf {
-    min-width: 28px;
-    height: 28px;
-    background: #f0f0f0;
-    border-radius: 6px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-weight: 700;
-    font-size: 13px;
-    color: #666;
-    flex-shrink: 0;
-  }
-  .opsi-item input[type="radio"]:checked + label .huruf {
-    background: #0f3460;
-    color: #fff;
-  }
-  .btn-next {
-    width: 100%;
-    margin-top: 24px;
-    padding: 14px;
-    background: #0f3460;
-    color: #fff;
-    border: none;
-    border-radius: 10px;
-    font-size: 15px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: background 0.2s, transform 0.1s;
-  }
-  .btn-next:hover { background: #16213e; }
-  .btn-next:active { transform: scale(0.98); }
-  .btn-next:disabled {
-    background: #ccc;
-    cursor: not-allowed;
-  }
-  .nama-siswa {
-    color: rgba(255,255,255,0.7);
-    font-size: 13px;
-  }
-</style>
-</head>
-<body>
+<div class="wrap" style="max-width:640px">
 
-<div class="header">
-  <div class="header-top">
-    <span><?= htmlspecialchars($_SESSION['nama']) ?> — <?= htmlspecialchars($_SESSION['kelas']) ?></span>
-    <span>Soal <?= $no_sekarang + 1 ?> / <?= $total ?></span>
-    <a href="#" onclick="return konfirmasiKeluar()" style="color:rgba(255,255,255,0.6);font-size:12px;text-decoration:none">✕ Keluar</a>
-  </div>
-  <div class="progress-bar">
-    <div class="progress-fill"></div>
-  </div>
-</div>
+    <!-- PROGRESS -->
+    <div class="card" style="padding:14px 18px">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:9px">
+            <span style="font-size:12px;font-weight:700;color:var(--abu);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+                <?= htmlspecialchars($_SESSION['nama']) ?> · <?= htmlspecialchars($_SESSION['kelas'] ?? '-') ?>
+            </span>
+            <span style="font-size:12px;font-weight:800;color:var(--biru);white-space:nowrap">
+                Soal <?= $no_sekarang + 1 ?>/<?= $total ?>
+            </span>
+        </div>
+        <div class="bar tipis"><i style="width:<?= $progress ?>%"></i></div>
+    </div>
 
-<div class="card">
-  <div class="bagian-label"><?= $bagian_label ?></div>
-  <div class="nomor-soal">Soal <?= $no_sekarang + 1 ?> dari <?= $total ?></div>
-  <div class="pertanyaan"><?= htmlspecialchars($soal['soal']) ?></div>
+    <?php if ($pretest_error): ?>
+        <div class="pt" style="border-left-color:var(--coral)">
+            <div class="pt-ic" style="background:var(--coral-muda);color:var(--coral)"><i class="icon-triangle-alert"></i></div>
+            <div>
+                <b>Terjadi masalah</b>
+                <p style="margin-bottom:0"><?= htmlspecialchars($pretest_error) ?></p>
+            </div>
+        </div>
+    <?php endif; ?>
 
-  <form method="POST" id="form-soal">
-    <input type="hidden" name="soal_no" value="<?= $no_sekarang ?>">
-    <ul class="opsi-list">
-      <?php foreach ($soal['opsi'] as $huruf => $teks): ?>
-      <li class="opsi-item">
-        <input type="radio" name="jawaban" id="opsi_<?= $huruf ?>"
-               value="<?= $huruf ?>" onchange="document.getElementById('btn-next').disabled=false">
-        <label for="opsi_<?= $huruf ?>">
-          <span class="huruf"><?= $huruf ?></span>
-          <?= htmlspecialchars($teks) ?>
-        </label>
-      </li>
-      <?php endforeach; ?>
-    </ul>
-    <button type="submit" class="btn-next" id="btn-next" disabled>
-      <?= $no_sekarang + 1 < $total ? 'Lanjut →' : 'Selesai & Lihat Hasil →' ?>
-    </button>
-  </form>
+    <!-- SOAL -->
+    <div class="card">
+        <div class="rata" style="margin-bottom:16px">
+            <span class="chip <?= $is_sjt ? 'pro' : '' ?>" style="margin:0">
+                <i class="<?= $is_sjt ? 'icon-message-circle-question' : 'icon-book-open' ?>"></i>
+                <?= $bagian_label ?>
+            </span>
+        </div>
+
+        <div style="font-size:16px;font-weight:700;line-height:1.65;margin-bottom:22px">
+            <?= htmlspecialchars($soal['soal']) ?>
+        </div>
+
+        <form method="POST" id="form-soal">
+            <input type="hidden" name="soal_no" value="<?= $no_sekarang ?>">
+            <ul class="opsi">
+                <?php foreach ($soal['opsi'] as $huruf => $teks): ?>
+                    <li>
+                        <label>
+                            <input type="radio" name="jawaban" value="<?= $huruf ?>"
+                                   onchange="document.getElementById('btn-next').disabled=false">
+                            <span style="display:flex;align-items:flex-start;gap:10px;flex:1">
+                                <b style="flex-shrink:0"><?= $huruf ?>.</b>
+                                <span><?= htmlspecialchars($teks) ?></span>
+                            </span>
+                        </label>
+                    </li>
+                <?php endforeach; ?>
+            </ul>
+
+            <button type="submit" class="btn btn-1 btn-full" id="btn-next" disabled style="margin-top:20px">
+                <?php if ($terakhir): ?>
+                    <i class="icon-check"></i> Selesai &amp; lihat hasil
+                <?php else: ?>
+                    Lanjut <i class="icon-arrow-right"></i>
+                <?php endif; ?>
+            </button>
+        </form>
+    </div>
+
+    <?php if ($is_sjt): ?>
+        <p style="font-size:11.5px;color:var(--abu-muda);text-align:center;line-height:1.6">
+            Tidak ada jawaban benar atau salah di bagian ini. Pilih yang paling sesuai dengan caramu belajar.
+        </p>
+    <?php endif; ?>
+
+    <div class="tengah">
+        <a href="#" onclick="return konfirmasiKeluar()" style="font-size:12px;color:var(--abu-muda);font-weight:600;text-decoration:none">
+            <i class="icon-x"></i> Keluar dari pre-test
+        </a>
+    </div>
+
 </div>
 
 <script>
 function konfirmasiKeluar() {
-    if (confirm("Yakin ingin keluar? Jawaban yang sudah diisi tidak akan tersimpan.")) {
-        window.location.href = "home.php";
+    if (confirm('Yakin ingin keluar? Jawaban yang sudah diisi tidak akan tersimpan.')) {
+        window.location.href = 'home.php';
     }
     return false;
 }

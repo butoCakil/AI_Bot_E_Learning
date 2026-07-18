@@ -1,64 +1,57 @@
+<?php
+/* ============================================================
+   Post-Test Locked — AdaptLearn PRE
+   ------------------------------------------------------------
+   Di-include oleh posttest.php SEBELUM topbar dicetak, lalu exit.
+   Karena itu file ini mencetak halaman lengkap sendiri.
+
+   Variabel dari posttest.php:
+     $sudah_selesai (bool), $akses['alasan'] (string)
+   ============================================================ */
+$sudah_selesai = $sudah_selesai ?? false;
+$alasan        = $akses['alasan'] ?? '';
+?>
 <!DOCTYPE html>
 <html lang="id">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#FFFFFF">
 <title>Post-Test — AdaptLearn PRE</title>
-<style>
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body {
-    font-family: 'Segoe UI', sans-serif;
-    background: linear-gradient(135deg, #1a2e1a 0%, #163016 50%, #0f4020 100%);
-    min-height: 100vh;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 20px;
-}
-.card {
-    background: #fff;
-    border-radius: 16px;
-    padding: 40px;
-    width: 100%;
-    max-width: 440px;
-    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-    text-align: center;
-}
-.icon { font-size: 48px; margin-bottom: 16px; }
-h2 { font-size: 20px; color: #1a1a2e; margin-bottom: 12px; }
-.alasan {
-    font-size: 14px;
-    color: #555;
-    line-height: 1.7;
-    background: #f8f9fa;
-    border-radius: 10px;
-    padding: 16px;
-    margin-bottom: 24px;
-}
-.btn {
-    display: inline-block;
-    padding: 12px 24px;
-    background: #0f3460;
-    color: #fff;
-    border-radius: 10px;
-    text-decoration: none;
-    font-size: 14px;
-    font-weight: 600;
-    transition: background 0.2s;
-}
-.btn:hover { background: #16213e; }
-</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/lucide-static@1.25.0/font/lucide.css" rel="stylesheet">
+<link rel="stylesheet" href="/assets/style.css?v=<?= @filemtime(__DIR__ . '/../assets/style.css') ?: '1' ?>">
 </head>
 <body>
-<div class="card">
-    <div class="icon"><?= $sudah_selesai ? '✓' : '🔒' ?></div>
-    <h2><?= $sudah_selesai ? 'Post-Test Sudah Selesai' : 'Post-Test Belum Bisa Diakses' ?></h2>
-    <div class="alasan"><?= htmlspecialchars($akses['alasan']) ?></div>
-    <?php if ($sudah_selesai): ?>
-        <a href="hasil_posttest.php" class="btn">Lihat Hasil →</a>
-    <?php else: ?>
-        <a href="materi.php" class="btn">Kembali ke Materi</a>
-    <?php endif; ?>
+
+<div class="wrap" style="max-width:460px;min-height:100vh;justify-content:center">
+    <div class="card tengah">
+        <div style="width:64px;height:64px;border-radius:50%;margin:4px auto 16px;display:grid;place-items:center;font-size:28px;
+                    background:<?= $sudah_selesai ? 'var(--teal-muda)' : 'var(--amber-muda)' ?>;
+                    color:<?= $sudah_selesai ? 'var(--teal)' : 'var(--amber)' ?>">
+            <i class="<?= $sudah_selesai ? 'icon-circle-check' : 'icon-lock' ?>"></i>
+        </div>
+
+        <h1 style="font-size:19px;font-weight:800;letter-spacing:-.4px;margin-bottom:10px">
+            <?= $sudah_selesai ? 'Post-Test sudah selesai' : 'Post-Test belum bisa diakses' ?>
+        </h1>
+
+        <p style="font-size:13px;color:var(--abu);line-height:1.65;background:var(--kanvas);
+                  border-radius:var(--r-md);padding:14px 16px;margin-bottom:20px">
+            <?= htmlspecialchars($alasan) ?>
+        </p>
+
+        <?php if ($sudah_selesai): ?>
+            <a href="hasil_posttest.php" class="btn btn-3 btn-full"><i class="icon-eye"></i> Lihat hasil</a>
+            <a href="home.php" class="btn btn-2 btn-full"><i class="icon-house"></i> Ke beranda</a>
+        <?php else: ?>
+            <a href="materi.php" class="btn btn-1 btn-full"><i class="icon-book-open"></i> Kembali ke materi</a>
+            <a href="home.php" class="btn btn-2 btn-full"><i class="icon-house"></i> Ke beranda</a>
+        <?php endif; ?>
+    </div>
 </div>
+
 </body>
 </html>

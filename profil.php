@@ -5,693 +5,311 @@ require_once 'includes/functions.php';
 
 require_login();
 
-$pdo = db();
+$pdo     = db();
 $user_id = $_SESSION['user_id'];
 
+// ── Profil belajar ───────────────────────────────────────────
 $profil = get_profil_siswa($user_id);
 
-$riwayat_pretest = $pdo->prepare("
-    SELECT * FROM pre_test_results
-    WHERE user_id = ?
-    ORDER BY created_at DESC
-");
-$riwayat_pretest->execute([$user_id]);
-$riwayat_pretest = $riwayat_pretest->fetchAll();
+// ── Riwayat pre-test ─────────────────────────────────────────
+$stmt = $pdo->prepare("SELECT * FROM pre_test_results WHERE user_id = ? ORDER BY created_at DESC");
+$stmt->execute([$user_id]);
+$riwayat_pretest = $stmt->fetchAll();
 
-$rekap_eval = $pdo->prepare("
-    SELECT topik,
-           COUNT(*) as jumlah,
-           MAX(JSON_EXTRACT(detail, '$.persentase')) as skor_terbaik,
-           MAX(created_at) as tgl_terakhir
-    FROM activity_log
-    WHERE user_id = ? AND tipe = 'jawab_quiz'
-    GROUP BY topik
+// ── Rekap evaluasi ───────────────────────────────────────────
+// Sumber: tabel evaluasi_results (bukan activity_log), karena
+// menyimpan skor & jumlah percobaan secara terstruktur.
+$stmt = $pdo->prepare("
+    SELECT e.topik, e.content_id, e.skor, e.total, e.persentase, e.percobaan, e.updated_at, c.judul
+    FROM evaluasi_results e
+    LEFT JOIN `content` c ON c.id = e.content_id
+    WHERE e.user_id = ?
+    ORDER BY e.updated_at DESC
 ");
-$rekap_eval->execute([$user_id]);
-$rekap_eval = $rekap_eval->fetchAll();
+$stmt->execute([$user_id]);
+$rekap_eval = $stmt->fetchAll();
 
-$posttest = $pdo->prepare("
-    SELECT pt.*, p.skor_pengetahuan as skor_pre
+// ── Post-test & N-Gain ───────────────────────────────────────
+$stmt = $pdo->prepare("
+    SELECT pt.*, p.skor_pengetahuan AS skor_pre
     FROM post_test_results pt
     JOIN pre_test_results p ON p.user_id = pt.user_id
     WHERE pt.user_id = ?
     ORDER BY pt.created_at DESC, p.created_at DESC
     LIMIT 1
 ");
-$posttest->execute([$user_id]);
-$posttest = $posttest->fetch();
-$ngain_data = null;
-if ($posttest) {
-    $ngain_data = hitung_ngain((int) $posttest['skor_pre'], (int) $posttest['skor_pengetahuan']);
-}
+$stmt->execute([$user_id]);
+$posttest   = $stmt->fetch();
+$ngain_data = $posttest
+    ? hitung_ngain((int) $posttest['skor_pre'], (int) $posttest['skor_pengetahuan'])
+    : null;
 
-$progress_topik = $pdo->prepare("
-    SELECT topik, COUNT(DISTINCT content_id) as dibuka
+// ── Progress materi per topik ────────────────────────────────
+$stmt = $pdo->prepare("
+    SELECT topik, COUNT(DISTINCT content_id) AS dibuka
     FROM activity_log
     WHERE user_id = ? AND tipe = 'selesai_materi' AND topik IS NOT NULL
     GROUP BY topik
 ");
-$progress_topik->execute([$user_id]);
-$progress_topik = array_column($progress_topik->fetchAll(), 'dibuka', 'topik');
-
-$total_konten_topik = [];
-if ($profil) {
-    foreach (array_keys(get_topik_list()) as $topik) {
-        $stmt = $pdo->prepare("
-            SELECT urutan_content FROM adaptation_rules
-            WHERE profil_gabungan = ? AND topik = ?
-        ");
-        $stmt->execute([$profil['profil_gabungan'], $topik]);
-        $row = $stmt->fetch();
-        if ($row) {
-            $ids = json_decode($row['urutan_content'], true);
-            $total_konten_topik[$topik] = count(array_unique($ids));
-        } else {
-            $total_konten_topik[$topik] = 1;
-        }
-    }
-}
-
-// Data profil terbaru
-$profil = get_profil_siswa($user_id);
-
-// Semua riwayat pre-test
-$riwayat_pretest = $pdo->prepare("
-    SELECT * FROM pre_test_results
-    WHERE user_id = ?
-    ORDER BY created_at DESC
-");
-$riwayat_pretest->execute([$user_id]);
-$riwayat_pretest = $riwayat_pretest->fetchAll();
-
-// Rekap evaluasi per topik
-$rekap_eval = $pdo->prepare("
-    SELECT topik,
-           COUNT(*) as jumlah,
-           MAX(JSON_EXTRACT(detail, '$.persentase')) as skor_terbaik,
-           MAX(created_at) as tgl_terakhir
-    FROM activity_log
-    WHERE user_id = ? AND tipe = 'jawab_quiz' AND topik != 'post_test'
-    GROUP BY topik
-");
-$rekap_eval->execute([$user_id]);
-$rekap_eval = $rekap_eval->fetchAll();
-
-// Data post-test
-$posttest = $pdo->prepare("
-    SELECT pt.*, p.skor_pengetahuan as skor_pre
-    FROM post_test_results pt
-    JOIN pre_test_results p ON p.user_id = pt.user_id
-    WHERE pt.user_id = ?
-    ORDER BY pt.created_at DESC, p.created_at DESC
-    LIMIT 1
-");
-$posttest->execute([$user_id]);
-$posttest = $posttest->fetch();
-$ngain_data = null;
-if ($posttest) {
-    $ngain_data = hitung_ngain((int) $posttest['skor_pre'], (int) $posttest['skor_pengetahuan']);
-}
-
-// Progress materi per topik (jumlah konten yang pernah dibuka)
-$progress_topik = $pdo->prepare("
-    SELECT topik,
-           COUNT(DISTINCT content_id) as dibuka
-    FROM activity_log
-    WHERE user_id = ? AND tipe = 'selesai_materi' AND topik IS NOT NULL
-    GROUP BY topik
-");
-$progress_topik->execute([$user_id]);
-$progress_topik = array_column($progress_topik->fetchAll(), 'dibuka', 'topik');
+$stmt->execute([$user_id]);
+$progress_topik = array_column($stmt->fetchAll(), 'dibuka', 'topik');
 
 // Total konten per topik dari adaptation_rules
+$topik_label        = get_topik_list();
 $total_konten_topik = [];
 if ($profil) {
-    foreach (array_keys(get_topik_list()) as $topik) {
-        $stmt = $pdo->prepare("
-            SELECT urutan_content FROM adaptation_rules
-            WHERE profil_gabungan = ? AND topik = ?
-        ");
+    foreach (array_keys($topik_label) as $topik) {
+        $stmt = $pdo->prepare("SELECT urutan_content FROM adaptation_rules WHERE profil_gabungan = ? AND topik = ?");
         $stmt->execute([$profil['profil_gabungan'], $topik]);
         $row = $stmt->fetch();
-        if ($row) {
-            $ids = json_decode($row['urutan_content'], true);
-            $total_konten_topik[$topik] = count(array_unique($ids));
-        } else {
-            $total_konten_topik[$topik] = 1;
-        }
+        $total_konten_topik[$topik] = $row
+            ? count(array_unique(json_decode($row['urutan_content'], true) ?? []))
+            : 0;
     }
 }
 
 $label_profil = [
-    'guided_step' => 'Guided-Step Learner',
-    'conceptual' => 'Conceptual Learner',
+    'guided_step'       => 'Guided-Step Learner',
+    'conceptual'        => 'Conceptual Learner',
     'practice_oriented' => 'Practice-Oriented Learner',
 ];
 $label_level = [
-    'beginner' => 'Pemula',
+    'beginner'     => 'Pemula',
     'intermediate' => 'Menengah',
-    'advanced' => 'Mahir',
+    'advanced'     => 'Mahir',
 ];
-$warna_level = [
-    'beginner' => '#e67e22',
-    'intermediate' => '#2980b9',
-    'advanced' => '#27ae60',
+$deskripsi_profil = [
+    'guided_step'       => 'Kamu belajar paling efektif dengan panduan langkah demi langkah. Materi disajikan secara terstruktur dan bertahap.',
+    'conceptual'        => 'Kamu belajar paling efektif dengan memahami konsep secara mendalam lebih dulu. Materi disajikan dengan penjelasan konseptual yang lengkap.',
+    'practice_oriented' => 'Kamu belajar paling efektif dengan langsung praktik dan eksplorasi. Materi disajikan dengan tantangan dan proyek nyata.',
 ];
-$topik_label = get_topik_list();
+
+// Inisial avatar
+$pecah   = preg_split('/\s+/', trim($_SESSION['nama']));
+$inisial = strtoupper(mb_substr($pecah[0], 0, 1));
+if (count($pecah) > 1) $inisial .= strtoupper(mb_substr(end($pecah), 0, 1));
+
+$page_title   = 'Profil — AdaptLearn PRE';
+$topbar_aktif = 'profil';
+include __DIR__ . '/includes/topbar_siswa.php';
 ?>
-<!DOCTYPE html>
-<html lang="id">
 
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Profil Saya — AdaptLearn PRE</title>
-    <style>
-* { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+<div class="crumb">
+    <a href="home.php">Beranda</a>
+    <span class="sep">›</span>
+    <span class="now">Profil</span>
+</div>
 
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
+<div class="wrap">
 
-        body {
-            font-family: 'Segoe UI', sans-serif;
-            background: #f0f2f5;
-        }
-
-        .topbar {
-            background: #0f3460;
-            color: #fff;
-            padding: 12px 24px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            position: sticky;
-            top: 0;
-            z-index: 100;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-        }
-
-        .topbar-left {
-            font-weight: 700;
-            font-size: 16px;
-        }
-
-        .topbar-nav {
-            display: flex;
-            gap: 20px;
-            align-items: center;
-        }
-
-        .topbar-nav a {
-            color: rgba(255, 255, 255, 0.75);
-            text-decoration: none;
-            font-size: 13px;
-            transition: color 0.2s;
-        }
-
-        .topbar-nav a:hover,
-        .topbar-nav a.aktif {
-            color: #fff;
-        }
-
-        .topbar-nav a.aktif {
-            font-weight: 600;
-        }
-
-        .container {
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 28px 20px;
-        }
-
-        .card {
-            background: #fff;
-            border-radius: 12px;
-            padding: 28px;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-            margin-bottom: 20px;
-        }
-
-        .section-title {
-            font-size: 15px;
-            font-weight: 700;
-            color: #0f3460;
-            margin-bottom: 16px;
-            padding-bottom: 8px;
-            border-bottom: 2px solid #e8f0fb;
-        }
-
-        /* ── PROFIL HEADER ── */
-        .profil-header {
-            display: flex;
-            align-items: center;
-            gap: 20px;
-            margin-bottom: 24px;
-        }
-
-        .avatar {
-            width: 64px;
-            height: 64px;
-            background: #0f3460;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 24px;
-            font-weight: 700;
-            color: #fff;
-            flex-shrink: 0;
-        }
-
-        .profil-info h2 {
-            font-size: 20px;
-            color: #1a1a2e;
-            margin-bottom: 4px;
-        }
-
-        .profil-meta {
-            font-size: 13px;
-            color: #888;
-        }
-
-        .profil-meta span {
-            margin-right: 12px;
-        }
-
-        /* ── PROFIL BELAJAR ── */
-        .profil-belajar {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 16px;
-            margin-bottom: 20px;
-        }
-
-        .info-box {
-            background: #f8f9fa;
-            border-radius: 10px;
-            padding: 16px;
-        }
-
-        .info-label {
-            font-size: 11px;
-            color: #999;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            margin-bottom: 6px;
-        }
-
-        .info-value {
-            font-size: 16px;
-            font-weight: 700;
-            color: #1a1a2e;
-        }
-
-        .badge {
-            display: inline-block;
-            padding: 4px 12px;
-            border-radius: 12px;
-            font-size: 12px;
-            font-weight: 700;
-            color: #fff;
-        }
-
-        /* ── PROGRESS TOPIK ── */
-        .progress-list {
-            display: flex;
-            flex-direction: column;
-            gap: 14px;
-        }
-
-        .progress-item {}
-
-        .progress-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 6px;
-        }
-
-        .progress-label {
-            font-size: 14px;
-            font-weight: 600;
-            color: #333;
-        }
-
-        .progress-pct {
-            font-size: 13px;
-            color: #888;
-        }
-
-        .progress-bar {
-            height: 8px;
-            background: #e8e8e8;
-            border-radius: 10px;
-            overflow: hidden;
-        }
-
-        .progress-fill {
-            height: 100%;
-            border-radius: 10px;
-            background: #0f3460;
-            transition: width 0.5s ease;
-        }
-
-        .progress-fill.selesai {
-            background: #27ae60;
-        }
-
-        /* ── EVALUASI ── */
-        .eval-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-            gap: 12px;
-        }
-
-        .eval-card {
-            background: #f8f9fa;
-            border-radius: 10px;
-            padding: 16px;
-            text-align: center;
-        }
-
-        .eval-topik {
-            font-size: 13px;
-            font-weight: 600;
-            color: #444;
-            margin-bottom: 8px;
-        }
-
-        .eval-skor {
-            font-size: 28px;
-            font-weight: 700;
-            margin-bottom: 4px;
-        }
-
-        .eval-tgl {
-            font-size: 11px;
-            color: #aaa;
-        }
-
-        .empty-state {
-            text-align: center;
-            padding: 24px;
-            color: #aaa;
-            font-size: 13px;
-        }
-
-        /* ── RIWAYAT ── */
-        .riwayat-list {
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        }
-
-        .riwayat-item {
-            display: flex;
-            align-items: center;
-            gap: 14px;
-            padding: 12px 16px;
-            background: #f8f9fa;
-            border-radius: 10px;
-            font-size: 13px;
-        }
-
-        .riwayat-no {
-            width: 24px;
-            height: 24px;
-            background: #0f3460;
-            color: #fff;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 11px;
-            font-weight: 700;
-            flex-shrink: 0;
-        }
-
-        .riwayat-info {
-            flex: 1;
-        }
-
-        .riwayat-profil {
-            font-weight: 600;
-            color: #1a1a2e;
-        }
-
-        .riwayat-detail {
-            font-size: 12px;
-            color: #888;
-            margin-top: 2px;
-        }
-
-        /* ── TOMBOL ── */
-        .btn-group {
-            display: flex;
-            gap: 10px;
-            flex-wrap: wrap;
-            margin-top: 4px;
-        }
-
-        .btn {
-            padding: 10px 20px;
-            border-radius: 10px;
-            font-size: 13px;
-            font-weight: 600;
-            cursor: pointer;
-            text-decoration: none;
-            border: none;
-            transition: all 0.2s;
-        }
-
-        .btn-primary {
-            background: #0f3460;
-            color: #fff;
-        }
-
-        .btn-primary:hover {
-            background: #16213e;
-        }
-
-        .btn-outline {
-            background: transparent;
-            border: 2px solid #0f3460;
-            color: #0f3460;
-        }
-
-        .btn-outline:hover {
-            background: #f0f7ff;
-        }
-
-        .btn-danger {
-            background: transparent;
-            border: 2px solid #e74c3c;
-            color: #e74c3c;
-        }
-
-        .btn-danger:hover {
-            background: #fff0f0;
-        }
-
-        @media (max-width: 600px) {
-            .profil-belajar {
-                grid-template-columns: 1fr;
-            }
-        }
-    </style>
-</head>
-
-<body>
-
-<?php $topbar_aktif="profil"; include __DIR__ . "/includes/topbar_siswa.php"; ?>
-
-    <div class="container">
-
-        <!-- PROFIL HEADER -->
-        <div class="card">
-            <div class="profil-header">
-                <div class="avatar"><?= strtoupper(mb_substr($_SESSION['nama'], 0, 1)) ?></div>
-                <div class="profil-info">
-                    <h2><?= htmlspecialchars($_SESSION['nama']) ?></h2>
-                    <div class="profil-meta">
-                        <span>NIS: <?= htmlspecialchars($_SESSION['nis']) ?></span>
-                        <span>Kelas: <?= htmlspecialchars($_SESSION['kelas'] ?? '-') ?></span>
-                        <span>WA: <?= htmlspecialchars($_SESSION['nomor_wa'] ?? '-') ?></span>
-                    </div>
+    <!-- IDENTITAS -->
+    <div class="card">
+        <div style="display:flex;align-items:center;gap:16px;margin-bottom:<?= $profil ? '18px' : '0' ?>">
+            <div style="width:58px;height:58px;border-radius:50%;background:var(--biru-muda);color:var(--biru-tua);
+                        display:grid;place-items:center;font-size:20px;font-weight:800;border:2.5px solid var(--biru-200);flex-shrink:0">
+                <?= htmlspecialchars($inisial) ?>
+            </div>
+            <div style="min-width:0">
+                <h1 style="font-size:19px;font-weight:800;letter-spacing:-.4px;line-height:1.3">
+                    <?= htmlspecialchars($_SESSION['nama']) ?>
+                </h1>
+                <div class="tags" style="margin-top:7px">
+                    <span class="tag"><i class="icon-id-card"></i> <?= htmlspecialchars($_SESSION['nis']) ?></span>
+                    <span class="tag"><i class="icon-users"></i> <?= htmlspecialchars($_SESSION['kelas'] ?? '-') ?></span>
+                    <?php if (!empty($_SESSION['nomor_wa'])): ?>
+                        <span class="tag"><i class="icon-phone"></i> <?= htmlspecialchars($_SESSION['nomor_wa']) ?></span>
+                    <?php endif; ?>
                 </div>
             </div>
-
-            <?php if ($profil): ?>
-                <div class="profil-belajar">
-                    <div class="info-box">
-                        <div class="info-label">Profil Belajar</div>
-                        <div class="info-value">
-                            <?= $label_profil[$profil['profil_learning']] ?? $profil['profil_learning'] ?>
-                        </div>
-                    </div>
-                    <div class="info-box">
-                        <div class="info-label">Level Kemampuan</div>
-                        <div class="info-value">
-                            <span class="badge"
-                                style="background:<?= $warna_level[$profil['level_kemampuan']] ?? '#888' ?>">
-                                <?= $label_level[$profil['level_kemampuan']] ?? $profil['level_kemampuan'] ?>
-                            </span>
-                        </div>
-                    </div>
-                    <div class="info-box">
-                        <div class="info-label">Skor Pre-Test</div>
-                        <div class="info-value"><?= $profil['skor_pengetahuan'] ?> / 12</div>
-                    </div>
-                    <div class="info-box">
-                        <div class="info-label">Pre-Test Terakhir</div>
-                        <div class="info-value" style="font-size:13px">
-                            <?= date('d M Y', strtotime($profil['created_at'])) ?>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="btn-group">
-                    <a href="materi.php" class="btn btn-primary">Lanjut Belajar →</a>
-                    <a href="pretest.php" class="btn btn-outline">Ulangi Pre-Test</a>
-                </div>
-
-            <?php else: ?>
-                <div class="empty-state">Kamu belum mengerjakan pre-test.</div>
-                <div class="btn-group" style="margin-top:12px">
-                    <a href="pretest.php" class="btn btn-primary">Mulai Pre-Test →</a>
-                </div>
-            <?php endif; ?>
         </div>
 
-        <!-- PROGRESS TOPIK -->
         <?php if ($profil): ?>
+            <div class="chips" style="margin-top:0">
+                <span class="chip pro"><i class="icon-target"></i> <?= $label_profil[$profil['profil_learning']] ?? $profil['profil_learning'] ?></span>
+                <span class="chip lvl"><i class="icon-signal"></i> <?= $label_level[$profil['level_kemampuan']] ?? $profil['level_kemampuan'] ?></span>
+                <span class="chip"><i class="icon-clipboard-check"></i> Pre-Test <?= $profil['skor_pengetahuan'] ?>/12</span>
+                <span class="chip"><i class="icon-calendar"></i> <?= date('d M Y', strtotime($profil['created_at'])) ?></span>
+            </div>
+            <p style="font-size:12.5px;color:var(--abu);line-height:1.6;margin-top:14px">
+                <?= $deskripsi_profil[$profil['profil_learning']] ?? '' ?>
+            </p>
+        <?php endif; ?>
+    </div>
+
+    <?php if (!$profil): ?>
+
+        <div class="card">
+            <div class="kosong">
+                <i class="icon-clipboard-list"></i>
+                <b>Kamu belum mengerjakan pre-test</b>
+                <p>Pre-test menentukan profil belajar dan urutan materi yang sesuai untukmu.</p>
+                <a href="pretest.php" class="btn btn-1 btn-sm" style="margin-top:16px">
+                    Mulai pre-test <i class="icon-arrow-right"></i>
+                </a>
+            </div>
+        </div>
+
+    <?php else: ?>
+
+        <div class="cta">
+            <a href="materi.php" class="btn btn-1"><i class="icon-play"></i> Lanjut belajar</a>
+            <a href="evaluasi.php" class="btn btn-2"><i class="icon-clipboard-list"></i> Evaluasi</a>
+        </div>
+
+        <!-- POST-TEST & N-GAIN -->
+        <?php if ($posttest && $ngain_data): ?>
+            <?php
+            $ng       = (float) $ngain_data['ngain'];
+            $warna_ng = $ng > 0.7 ? 'var(--teal)' : ($ng >= 0.3 ? 'var(--biru)' : 'var(--coral)');
+            $bg_ng    = $ng > 0.7 ? 'var(--teal-muda)' : ($ng >= 0.3 ? 'var(--biru-muda)' : 'var(--coral-muda)');
+            ?>
+            <div class="sect"><i class="icon-trending-up"></i> Hasil post-test &amp; N-Gain</div>
             <div class="card">
-                <div class="section-title">Progress Belajar per Topik</div>
-                <div class="progress-list">
-                    <?php foreach ($topik_label as $slug => $nama): ?>
-                        <?php
-                        $dibuka = $progress_topik[$slug] ?? 0;
-                        $total = $total_konten_topik[$slug] ?? 1;
-                        $pct = min(100, round(($dibuka / $total) * 100));
-                        $selesai = $pct >= 100;
-                        ?>
-                        <div class="progress-item">
-                            <div class="progress-header">
-                                <span class="progress-label">
-                                    <?= htmlspecialchars($nama) ?>
-                                    <?php if ($selesai): ?>
-                                        <span style="color:#27ae60;font-size:12px"> ✓ Selesai</span>
-                                    <?php endif; ?>
-                                </span>
-                                <span class="progress-pct"><?= $dibuka ?>/<?= $total ?> materi (<?= $pct ?>%)</span>
-                            </div>
-                            <div class="progress-bar">
-                                <div class="progress-fill <?= $selesai ? 'selesai' : '' ?>" style="width:<?= $pct ?>%"></div>
-                            </div>
-                        </div>
-                    <?php endforeach; ?>
+                <div style="display:grid;grid-template-columns:1fr auto 1fr auto 1.2fr;gap:10px;align-items:center;margin-bottom:16px">
+                    <div class="tengah" style="background:var(--kanvas);border-radius:var(--r-sm);padding:14px 8px">
+                        <div style="font-size:10px;font-weight:800;color:var(--abu-muda);text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px">Pre-Test</div>
+                        <div style="font-size:22px;font-weight:800;letter-spacing:-.6px"><?= $posttest['skor_pre'] ?><span style="font-size:12px;color:var(--abu-muda)">/12</span></div>
+                    </div>
+                    <i class="icon-arrow-right" style="color:var(--abu-muda);font-size:16px"></i>
+                    <div class="tengah" style="background:var(--kanvas);border-radius:var(--r-sm);padding:14px 8px">
+                        <div style="font-size:10px;font-weight:800;color:var(--abu-muda);text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px">Post-Test</div>
+                        <div style="font-size:22px;font-weight:800;letter-spacing:-.6px"><?= $posttest['skor_pengetahuan'] ?><span style="font-size:12px;color:var(--abu-muda)">/12</span></div>
+                    </div>
+                    <i class="icon-equal" style="color:var(--abu-muda);font-size:16px"></i>
+                    <div class="tengah" style="background:<?= $bg_ng ?>;border-radius:var(--r-sm);padding:14px 8px">
+                        <div style="font-size:10px;font-weight:800;color:<?= $warna_ng ?>;text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px">N-Gain</div>
+                        <div style="font-size:22px;font-weight:800;letter-spacing:-.6px;color:<?= $warna_ng ?>"><?= number_format($ng, 2) ?></div>
+                        <div style="font-size:11px;font-weight:800;color:<?= $warna_ng ?>;margin-top:2px"><?= $ngain_data['kategori'] ?></div>
+                    </div>
+                </div>
+
+                <div style="background:var(--kanvas);border-radius:var(--r-sm);padding:12px 14px;font-size:12.5px;color:var(--abu);line-height:1.7">
+                    <b style="color:var(--tinta)">Perhitungan N-Gain (Hake, 1999)</b><br>
+                    g = (<?= $posttest['skor_pengetahuan'] ?> − <?= $posttest['skor_pre'] ?>) ÷ (12 − <?= $posttest['skor_pre'] ?>)
+                    = <b style="color:<?= $warna_ng ?>"><?= number_format($ng, 4) ?></b>
+                    → kategori <b style="color:<?= $warna_ng ?>"><?= $ngain_data['kategori'] ?></b>
+                </div>
+
+                <div class="rata" style="margin-top:12px;justify-content:space-between;flex-wrap:wrap">
+                    <span style="font-size:11.5px;color:var(--abu-muda);font-weight:600">
+                        Dikerjakan <?= date('d M Y H:i', strtotime($posttest['created_at'])) ?>
+                    </span>
+                    <a href="hasil_posttest.php" class="btn btn-2 btn-sm">
+                        <i class="icon-eye"></i> Lihat pembahasan
+                    </a>
                 </div>
             </div>
-
-            <!-- HASIL POST-TEST & N-GAIN -->
-            <?php if ($posttest && $ngain_data): ?>
-                <div class="card">
-                    <div class="section-title">Hasil Post-Test & N-Gain</div>
-                    <?php
-                    $warna_ng = $ngain_data['ngain'] > 0.7
-                        ? '#27ae60'
-                        : ($ngain_data['ngain'] >= 0.3 ? '#2980b9' : '#e74c3c');
-                    ?>
-                    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:16px">
-                        <div class="info-box" style="text-align:center">
-                            <div class="info-label">Skor Pre-Test</div>
-                            <div class="info-value"><?= $posttest['skor_pre'] ?>/12</div>
-                        </div>
-                        <div class="info-box" style="text-align:center">
-                            <div class="info-label">Skor Post-Test</div>
-                            <div class="info-value"><?= $posttest['skor_pengetahuan'] ?>/12</div>
-                        </div>
-                        <div class="info-box" style="text-align:center;background:#f0fff8;border:2px solid <?= $warna_ng ?>">
-                            <div class="info-label">N-Gain</div>
-                            <div class="info-value" style="color:<?= $warna_ng ?>">
-                                <?= number_format($ngain_data['ngain'], 2) ?>
-                            </div>
-                            <div style="font-size:12px;color:<?= $warna_ng ?>;font-weight:600;margin-top:4px">
-                                <?= $ngain_data['kategori'] ?>
-                            </div>
-                        </div>
-                    </div>
-                    <div
-                        style="background:#f8f9fa;border-radius:10px;padding:12px 16px;font-size:13px;color:#555;line-height:1.8">
-                        <strong>Perhitungan N-Gain (Hake, 1999):</strong><br>
-                        g = (<?= $posttest['skor_pengetahuan'] ?> - <?= $posttest['skor_pre'] ?>) /
-                        (12 - <?= $posttest['skor_pre'] ?>) =
-                        <strong style="color:<?= $warna_ng ?>"><?= number_format($ngain_data['ngain'], 4) ?></strong>
-                        → Kategori <strong><?= $ngain_data['kategori'] ?></strong>
-                    </div>
-                    <div style="font-size:12px;color:#aaa;margin-top:10px">
-                        Post-test dikerjakan: <?= date('d M Y H:i', strtotime($posttest['created_at'])) ?>
-                        · <a href="hasil_posttest.php" style="color:#0f3460">Lihat pembahasan →</a>
-                    </div>
-                </div>
-            <?php endif; ?>
-
-            <!-- REKAP EVALUASI -->
-            <div class="card">
-                <div class="section-title">Rekap Evaluasi</div>
-                <?php if ($rekap_eval): ?>
-                    <div class="eval-grid">
-                        <?php foreach ($rekap_eval as $e):
-                            $skor = (float) $e['skor_terbaik'];
-                            $c = $skor >= 80 ? '#27ae60' : ($skor >= 60 ? '#2980b9' : '#e74c3c');
-                            ?>
-                            <div class="eval-card">
-                                <div class="eval-topik"><?= htmlspecialchars($topik_label[$e['topik']] ?? $e['topik']) ?></div>
-                                <div class="eval-skor" style="color:<?= $c ?>"><?= $skor ?>%</div>
-                                <div class="eval-tgl">
-                                    <?= $e['jumlah'] ?> kali dikerjakan<br>
-                                    Terakhir: <?= date('d/m/Y', strtotime($e['tgl_terakhir'])) ?>
-                                </div>
-                            </div>
-                        <?php endforeach; ?>
-                    </div>
-                <?php else: ?>
-                    <div class="empty-state">Belum ada evaluasi yang dikerjakan.</div>
-                <?php endif; ?>
-            </div>
-
-            <!-- RIWAYAT PRE-TEST -->
-            <?php if (count($riwayat_pretest) > 1): ?>
-                <div class="card">
-                    <div class="section-title">Riwayat Pre-Test</div>
-                    <div class="riwayat-list">
-                        <?php foreach ($riwayat_pretest as $i => $r): ?>
-                            <div class="riwayat-item">
-                                <div class="riwayat-no"><?= count($riwayat_pretest) - $i ?></div>
-                                <div class="riwayat-info">
-                                    <div class="riwayat-profil">
-                                        <?= $label_profil[$r['profil_learning']] ?? $r['profil_learning'] ?>
-                                        — <span class="badge"
-                                            style="background:<?= $warna_level[$r['level_kemampuan']] ?? '#888' ?>;font-size:11px">
-                                            <?= $label_level[$r['level_kemampuan']] ?? $r['level_kemampuan'] ?>
-                                        </span>
-                                    </div>
-                                    <div class="riwayat-detail">
-                                        Skor: <?= $r['skor_pengetahuan'] ?>/12
-                                        · <?= date('d M Y H:i', strtotime($r['created_at'])) ?>
-                                    </div>
-                                </div>
-                            </div>
-                        <?php endforeach; ?>
-                    </div>
-                </div>
-            <?php endif; ?>
         <?php endif; ?>
 
-    </div>
-</body>
+        <!-- PROGRESS PER TOPIK -->
+        <div class="sect"><i class="icon-chart-line"></i> Progress per topik</div>
+        <div class="card" style="display:flex;flex-direction:column;gap:14px">
+            <?php foreach ($topik_label as $slug => $nama): ?>
+                <?php
+                $dibuka  = $progress_topik[$slug] ?? 0;
+                $total   = $total_konten_topik[$slug] ?? 0;
+                $pct     = $total > 0 ? min(100, round(($dibuka / $total) * 100)) : 0;
+                $selesai = $pct >= 100;
+                ?>
+                <div>
+                    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:7px">
+                        <span style="font-size:13px;font-weight:700;display:flex;align-items:center;gap:6px">
+                            <?= htmlspecialchars($nama) ?>
+                            <?php if ($selesai): ?>
+                                <i class="icon-circle-check" style="color:var(--teal);font-size:14px"></i>
+                            <?php endif; ?>
+                        </span>
+                        <span style="font-size:11.5px;color:var(--abu-muda);font-weight:700;white-space:nowrap">
+                            <?= $dibuka ?>/<?= $total ?> · <?= $pct ?>%
+                        </span>
+                    </div>
+                    <div class="bar tipis"><i class="<?= $selesai ? 'done' : '' ?>" style="width:<?= $pct ?>%"></i></div>
+                </div>
+            <?php endforeach; ?>
+        </div>
 
+        <!-- REKAP EVALUASI -->
+        <div class="sect"><i class="icon-clipboard-list"></i> Rekap evaluasi</div>
+        <?php if ($rekap_eval): ?>
+            <div class="grid">
+                <?php foreach ($rekap_eval as $e): ?>
+                    <?php
+                    $p     = (int) $e['persentase'];
+                    $warna = $p >= 80 ? 'var(--teal)' : ($p >= 60 ? 'var(--biru)' : 'var(--coral)');
+                    $bg    = $p >= 80 ? 'var(--teal-muda)' : ($p >= 60 ? 'var(--biru-muda)' : 'var(--coral-muda)');
+                    ?>
+                    <a href="hasil_evaluasi.php?konten=<?= (int) $e['content_id'] ?>" class="tk">
+                        <div class="tk-h">
+                            <b style="font-size:13px"><?= htmlspecialchars($topik_label[$e['topik']] ?? $e['topik']) ?></b>
+                            <span class="tk-ic" style="background:<?= $bg ?>;color:<?= $warna ?>"><i class="icon-award"></i></span>
+                        </div>
+                        <span class="tk-pct" style="color:<?= $warna ?>"><?= $p ?>%</span>
+                        <div class="bar"><i style="width:<?= $p ?>%;background:<?= $warna ?>"></i></div>
+                        <div class="tags">
+                            <span class="tag"><i class="icon-check"></i> <?= (int) $e['skor'] ?>/<?= (int) $e['total'] ?></span>
+                            <?php if ((int) $e['percobaan'] > 1): ?>
+                                <span class="tag"><i class="icon-refresh-cw"></i> <?= (int) $e['percobaan'] ?>×</span>
+                            <?php endif; ?>
+                            <span class="tag"><i class="icon-clock"></i> <?= date('d/m/y', strtotime($e['updated_at'])) ?></span>
+                        </div>
+                        <span class="tk-go" style="color:var(--biru)">Lihat pembahasan <i class="icon-arrow-right"></i></span>
+                    </a>
+                <?php endforeach; ?>
+            </div>
+        <?php else: ?>
+            <div class="card">
+                <div class="kosong">
+                    <i class="icon-clipboard-list"></i>
+                    <b>Belum ada evaluasi yang dikerjakan</b>
+                    <p>Kerjakan evaluasi di tiap topik untuk mengukur pemahamanmu.</p>
+                    <a href="evaluasi.php" class="btn btn-2 btn-sm" style="margin-top:16px">
+                        Lihat daftar evaluasi <i class="icon-arrow-right"></i>
+                    </a>
+                </div>
+            </div>
+        <?php endif; ?>
+
+        <!-- RIWAYAT PRE-TEST -->
+        <?php if (count($riwayat_pretest) > 1): ?>
+            <div class="sect"><i class="icon-history"></i> Riwayat pre-test</div>
+            <div class="card" style="display:flex;flex-direction:column;gap:9px">
+                <?php foreach ($riwayat_pretest as $i => $r): ?>
+                    <div class="rata" style="background:var(--kanvas);border-radius:var(--r-sm);padding:11px 13px">
+                        <span style="width:24px;height:24px;border-radius:50%;background:<?= $i === 0 ? 'var(--biru)' : 'var(--abu-muda)' ?>;
+                                     color:#fff;display:grid;place-items:center;font-size:11px;font-weight:800;flex-shrink:0">
+                            <?= count($riwayat_pretest) - $i ?>
+                        </span>
+                        <div style="flex:1;min-width:0">
+                            <div style="font-size:12.5px;font-weight:700">
+                                <?= $label_profil[$r['profil_learning']] ?? $r['profil_learning'] ?>
+                                <span style="color:var(--abu-muda);font-weight:600">·</span>
+                                <?= $label_level[$r['level_kemampuan']] ?? $r['level_kemampuan'] ?>
+                            </div>
+                            <div style="font-size:11px;color:var(--abu-muda);font-weight:600;margin-top:2px">
+                                Skor <?= $r['skor_pengetahuan'] ?>/12 · <?= date('d M Y H:i', strtotime($r['created_at'])) ?>
+                            </div>
+                        </div>
+                        <?php if ($i === 0): ?>
+                            <span class="tag ok" style="flex-shrink:0"><i class="icon-check"></i> Aktif</span>
+                        <?php endif; ?>
+                    </div>
+                <?php endforeach; ?>
+            </div>
+        <?php endif; ?>
+
+        <div class="card tengah" style="padding:16px">
+            <p style="font-size:12px;color:var(--abu-muda);line-height:1.6;margin-bottom:12px">
+                Mengulang pre-test akan mengubah profil belajar dan urutan materimu.
+            </p>
+            <a href="pretest.php" class="btn btn-2 btn-sm" style="display:inline-flex">
+                <i class="icon-refresh-cw"></i> Ulangi pre-test
+            </a>
+        </div>
+
+    <?php endif; ?>
+
+</div>
+
+<?php include __DIR__ . '/includes/bottomnav_siswa.php'; ?>
+</body>
 </html>
