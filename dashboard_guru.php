@@ -6,7 +6,7 @@ session_start();
 
 $pdo = db();
 
-// Handler tambah siswa
+// ── Handler aksi (POST ke halaman sendiri) ───────────────────
 $pesan_akun = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi'])) {
     if ($_POST['aksi'] === 'tambah') {
@@ -30,25 +30,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi'])) {
         } else {
             $pesan_akun = '✗ Password baru tidak boleh kosong.';
         }
-    } elseif ($_POST['aksi'] === 'reset_password' && !empty($_POST['reset_id'])) {
-        $id = (int) $_POST['reset_id'];
-        $new_password = trim($_POST['new_password'] ?? '');
-        if ($new_password) {
-            $hash = password_hash($new_password, PASSWORD_DEFAULT);
-            $pdo->prepare("UPDATE users SET password_hash = ? WHERE id = ?")->execute([$hash, $id]);
-            $pesan_akun = '✓ Password berhasil direset.';
-        } else {
-            $pesan_akun = '✗ Password baru tidak boleh kosong.';
-        }
     } elseif ($_POST['aksi'] === 'hapus' && !empty($_POST['hapus_id'])) {
         hapus_akun_siswa((int) $_POST['hapus_id']);
         $pesan_akun = "✓ Akun siswa berhasil dihapus.";
     } elseif ($_POST['aksi'] === 'edit_siswa' && !empty($_POST['edit_id'])) {
-        $id   = (int) $_POST['edit_id'];
-        $nama = trim($_POST['edit_nama'] ?? '');
-        $nis  = trim($_POST['edit_nis'] ?? '');
+        $id    = (int) $_POST['edit_id'];
+        $nama  = trim($_POST['edit_nama'] ?? '');
+        $nis   = trim($_POST['edit_nis'] ?? '');
         $kelas = trim($_POST['edit_kelas'] ?? '');
-        $wa   = normalisasi_wa(trim($_POST['edit_wa'] ?? ''));
+        $wa    = normalisasi_wa(trim($_POST['edit_wa'] ?? ''));
         if ($nama && $nis) {
             $pdo->prepare("UPDATE users SET nama=?, nis=?, kelas=?, nomor_wa=? WHERE id=? AND role='siswa'")
                 ->execute([$nama, $nis, $kelas, $wa, $id]);
@@ -57,10 +47,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi'])) {
             $pesan_akun = '✗ Nama dan NIS tidak boleh kosong.';
         }
     } elseif ($_POST['aksi'] === 'setting_posttest') {
-        $aktif = isset($_POST['posttest_aktif']) ? '1' : '0';
+        $aktif  = isset($_POST['posttest_aktif']) ? '1' : '0';
         $durasi = max(1, (int) $_POST['durasi_hari']);
-        $mulai = $_POST['tgl_mulai'] ?: date('Y-m-d');
-        $min = max(1, min(100, (int) $_POST['min_persen']));
+        $mulai  = $_POST['tgl_mulai'] ?: date('Y-m-d');
+        $min    = max(1, min(100, (int) $_POST['min_persen']));
 
         set_pengaturan('posttest_aktif', $aktif);
         set_pengaturan('posttest_mulai', $mulai);
@@ -73,7 +63,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi'])) {
         set_pengaturan('wa_ai_prompt',   trim($_POST['wa_ai_prompt']   ?? ''));
         $pesan_akun = '✓ Pengaturan AI berhasil disimpan.';
     } elseif ($_POST['aksi'] === 'setting_wa_gateway') {
-        set_pengaturan('wa_bot_nomor',    trim($_POST['wa_bot_nomor']    ?? ''));
+        set_pengaturan('wa_bot_nomor', trim($_POST['wa_bot_nomor'] ?? ''));
         set_pengaturan('wa_gateway',   trim($_POST['wa_gateway']   ?? 'fonnte'));
         $pesan_akun = '✓ Konfigurasi WA Gateway berhasil disimpan.';
     }
@@ -84,15 +74,13 @@ if (empty($_SESSION['role']) || $_SESSION['role'] !== 'guru') {
     exit;
 }
 
-// $pdo = db();
-
-// ── Data ringkasan ──────────────────────────────────────
-$total_siswa = $pdo->query("SELECT COUNT(*) FROM users WHERE role='siswa'")->fetchColumn();
-$total_pretest = $pdo->query("SELECT COUNT(*) FROM pre_test_results")->fetchColumn();
+// ── Data ringkasan ───────────────────────────────────────────
+$total_siswa     = $pdo->query("SELECT COUNT(*) FROM users WHERE role='siswa'")->fetchColumn();
+$total_pretest   = $pdo->query("SELECT COUNT(*) FROM pre_test_results")->fetchColumn();
 $total_aktivitas = $pdo->query("SELECT COUNT(*) FROM activity_log")->fetchColumn();
-$avg_skor = $pdo->query("SELECT ROUND(AVG(skor_pengetahuan),1) FROM pre_test_results")->fetchColumn();
+$avg_skor        = $pdo->query("SELECT ROUND(AVG(skor_pengetahuan),1) FROM pre_test_results")->fetchColumn();
 
-// ── Distribusi profil ───────────────────────────────────
+// ── Distribusi profil & level ────────────────────────────────
 $distribusi_profil = $pdo->query("
     SELECT profil_learning, COUNT(*) as jumlah
     FROM pre_test_results
@@ -107,7 +95,7 @@ $distribusi_level = $pdo->query("
     ORDER BY FIELD(level_kemampuan,'beginner','intermediate','advanced')
 ")->fetchAll();
 
-// ── Daftar siswa dengan profil terbaru ─────────────────
+// ── Daftar siswa dengan profil terbaru ───────────────────────
 $siswa_list = $pdo->query("
     SELECT u.id, u.nis, u.nama, u.kelas, u.nomor_wa, u.created_at,
            p.profil_gabungan, p.profil_learning, p.level_kemampuan,
@@ -121,379 +109,156 @@ $siswa_list = $pdo->query("
         SELECT id FROM post_test_results WHERE user_id = u.id ORDER BY created_at DESC LIMIT 1
     )
     WHERE u.role = 'siswa'
-    ORDER BY u.created_at DESC
+    ORDER BY u.nama
 ")->fetchAll();
 
-// ── Activity log terbaru ────────────────────────────────
+// ── Aktivitas terbaru (30) ───────────────────────────────────
 $aktivitas_terbaru = $pdo->query("
-    SELECT a.*, u.nama, u.kelas
+    SELECT a.tipe, a.topik, a.created_at, a.detail, u.nama, u.kelas
     FROM activity_log a
     JOIN users u ON u.id = a.user_id
+    WHERE u.role = 'siswa'
     ORDER BY a.created_at DESC
     LIMIT 30
 ")->fetchAll();
 
-// ── Rekap skor evaluasi per topik ──────────────────────
-$rekap_evaluasi = $pdo->query("
-    SELECT topik,
-           COUNT(*) as jumlah_quiz,
-           ROUND(AVG(JSON_EXTRACT(detail, '$.persentase')), 1) as rata_persen
-    FROM activity_log
-    WHERE tipe = 'jawab_quiz'
-    GROUP BY topik
-")->fetchAll();
-
+// ── Label & warna ────────────────────────────────────────────
 $label_profil = [
-    'guided_step' => 'Guided-Step',
-    'conceptual' => 'Conceptual',
+    'guided_step'       => 'Guided-Step',
+    'conceptual'        => 'Conceptual',
     'practice_oriented' => 'Practice-Oriented',
 ];
 $label_level = [
-    'beginner' => 'Pemula',
+    'beginner'     => 'Pemula',
     'intermediate' => 'Menengah',
-    'advanced' => 'Mahir',
-];
-$warna_level = [
-    'beginner' => '#e67e22',
-    'intermediate' => '#2980b9',
-    'advanced' => '#27ae60',
+    'advanced'     => 'Mahir',
 ];
 $warna_profil = [
-    'guided_step' => '#8e44ad',
-    'conceptual' => '#2980b9',
-    'practice_oriented' => '#27ae60',
+    'guided_step'       => '#2563EB',
+    'conceptual'        => '#7C3AED',
+    'practice_oriented' => '#0EA5A4',
 ];
+$warna_level = [
+    'beginner'     => '#94A3B8',
+    'intermediate' => '#F59E0B',
+    'advanced'     => '#0EA5A4',
+];
+
+$page_title = 'Dashboard Guru — AdaptLearn PRE';
+$guru_aktif = 'dashboard';
+include __DIR__ . '/includes/topbar_guru.php';
 ?>
-<!DOCTYPE html>
-<html lang="id">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Dashboard Guru — AdaptLearn PRE</title>
-<style>
-* { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
-
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: 'Segoe UI', sans-serif; background: #f0f2f5; min-height: 100vh; }
-
-/* TOPBAR */
-.topbar {
-    background: #0f3460;
-    color: #fff;
-    padding: 0 24px;
-    height: 56px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    position: sticky;
-    top: 0;
-    z-index: 100;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-}
-.topbar-brand { font-weight: 700; font-size: 16px; }
-.topbar-brand span { font-weight: 300; opacity: 0.6; font-size: 13px; margin-left: 8px; }
-.topbar-right { font-size: 13px; opacity: 0.8; }
-
-/* TAB NAV */
-.tab-nav {
-    background: #fff;
-    border-bottom: 2px solid #e8e8e8;
-    display: flex;
-    padding: 0 24px;
-    gap: 0;
-    overflow-x: auto;
-    position: sticky;
-    top: 56px;
-    z-index: 99;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
-    scrollbar-width: none;
-    -ms-overflow-style: none;
-}
-.tab-nav::-webkit-scrollbar { display: none; }
-.tab-btn {
-    padding: 14px 20px;
-    font-size: 13px;
-    font-weight: 600;
-    color: #888;
-    border: none;
-    border-bottom: 3px solid transparent;
-    background: none;
-    cursor: pointer;
-    white-space: nowrap;
-    transition: all 0.2s;
-    margin-bottom: -2px;
-}
-.tab-btn:hover { color: #0f3460; }
-.tab-btn.aktif { color: #0f3460; border-bottom-color: #0f3460; }
-
-/* CONTAINER */
-.container { max-width: 1100px; margin: 0 auto; padding: 24px 16px; }
-
-/* TAB PANEL */
-.tab-panel { display: none; }
-.tab-panel.aktif { display: block; }
-
-/* STAT CARDS */
-.stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
-.stat-card {
-    background: #fff;
-    border-radius: 12px;
-    padding: 20px 24px;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
-    border-top: 4px solid #0f3460;
-}
-.stat-card.green { border-top-color: #27ae60; }
-.stat-card.orange { border-top-color: #e67e22; }
-.stat-card.purple { border-top-color: #8e44ad; }
-.stat-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; color: #999; margin-bottom: 8px; }
-.stat-value { font-size: 32px; font-weight: 700; color: #1a1a2e; margin-bottom: 4px; }
-.stat-desc { font-size: 12px; color: #aaa; }
-
-/* CHARTS ROW */
-.charts-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
-.card {
-    background: #fff;
-    border-radius: 12px;
-    padding: 20px 24px;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
-    margin-bottom: 16px;
-}
-.card-title { font-size: 14px; font-weight: 700; color: #333; margin-bottom: 16px; padding-bottom: 10px; border-bottom: 1px solid #f0f0f0; }
-
-/* DISTRIBUSI BAR */
-.dist-row { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
-.dist-label { font-size: 13px; color: #555; width: 130px; flex-shrink: 0; }
-.dist-bar-wrap { flex: 1; background: #f0f2f5; border-radius: 99px; height: 8px; overflow: hidden; }
-.dist-bar-fill { height: 100%; border-radius: 99px; }
-.dist-count { font-size: 13px; font-weight: 700; color: #333; width: 24px; text-align: right; }
-
-/* TABLE */
-.table-wrap { overflow-x: auto; }
-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-thead tr { background: #0f3460; color: #fff; }
-th { padding: 11px 14px; text-align: left; font-weight: 600; font-size: 12px; white-space: nowrap; }
-td { padding: 11px 14px; border-bottom: 1px solid #f0f0f0; vertical-align: middle; }
-tr:last-child td { border-bottom: none; }
-tr:hover td { background: #fafbff; }
-
-/* BADGE */
-.badge {
-    display: inline-block;
-    padding: 3px 10px;
-    border-radius: 99px;
-    font-size: 11px;
-    font-weight: 700;
-    color: #fff;
-    white-space: nowrap;
-}
-.badge-tipe {
-    display: inline-block;
-    padding: 2px 8px;
-    border-radius: 4px;
-    font-size: 10px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-}
-
-/* FORM */
-.form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; align-items: end; }
-.form-group label { display: block; font-size: 12px; font-weight: 600; color: #555; margin-bottom: 6px; }
-.form-group input, .form-group select {
-    width: 100%;
-    padding: 9px 12px;
-    border: 2px solid #e0e0e0;
-    border-radius: 8px;
-    font-size: 13px;
-    outline: none;
-    transition: border-color 0.2s;
-}
-.form-group input:focus, .form-group select:focus { border-color: #0f3460; }
-
-/* BUTTONS */
-.btn {
-    padding: 9px 18px;
-    border-radius: 8px;
-    font-size: 13px;
-    font-weight: 600;
-    border: none;
-    cursor: pointer;
-    text-decoration: none;
-    display: inline-block;
-    transition: all 0.2s;
-}
-.btn-primary { background: #0f3460; color: #fff; }
-.btn-primary:hover { background: #16213e; }
-.btn-success { background: #27ae60; color: #fff; }
-.btn-success:hover { background: #219150; }
-.btn-danger { background: #e74c3c; color: #fff; }
-.btn-danger:hover { background: #c0392b; }
-.btn-outline { background: transparent; border: 2px solid #0f3460; color: #0f3460; }
-.btn-outline:hover { background: #f0f7ff; }
-.btn-sm { padding: 5px 12px; font-size: 12px; }
-
-/* ALERT */
-.alert { padding: 12px 16px; border-radius: 8px; font-size: 13px; margin-bottom: 16px; }
-.alert-success { background: #e8f8ef; color: #1e8449; border: 1px solid #a9dfbf; }
-.alert-danger { background: #fdf0ef; color: #c0392b; border: 1px solid #f5b7b1; }
-
-/* POSTTEST STATUS */
-.status-bar {
-    background: #f8f9fa;
-    border-radius: 8px;
-    padding: 12px 16px;
-    font-size: 13px;
-    color: #555;
-    margin-top: 14px;
-    line-height: 1.8;
-}
-
-/* EMPTY */
-.empty-state { text-align: center; padding: 40px; color: #aaa; font-size: 14px; }
-
-@media (max-width: 768px) {
-    .stat-grid { grid-template-columns: repeat(2, 1fr); }
-    .charts-row { grid-template-columns: 1fr; }
-}
-</style>
 <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css">
-<script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
-<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
-</head>
-<body>
 
-<!-- TOPBAR -->
-<div class="topbar">
-    <div class="topbar-brand">Dashboard Guru <span>AdaptLearn PRE — SMK Negeri Bansari</span></div>
-    <div class="topbar-right" style="display:flex;align-items:center;gap:16px">
-        <span><?= htmlspecialchars($_SESSION['guru_nama'] ?? 'Guru') ?></span>
-        <a href="logout.php" style="color:rgba(255,255,255,0.6);font-size:12px;text-decoration:none">Keluar</a>
-    </div>
+<div class="crumb">
+    <span class="now">Dashboard Guru</span>
+    <span class="sep">·</span>
+    <span>Halo, <?= htmlspecialchars($_SESSION['guru_nama'] ?? 'Guru') ?></span>
 </div>
-
-<!-- TAB NAVIGATION -->
-<div class="tab-nav">
-    <button class="tab-btn aktif" onclick="bukaTab('ringkasan', this)">📊 Ringkasan</button>
-    <button class="tab-btn" onclick="bukaTab('siswa', this)">👥 Siswa</button>
-    <button class="tab-btn" onclick="bukaTab('penilaian', this)">📎 Penilaian Jobsheet</button>
-    <button class="tab-btn" onclick="bukaTab('materi', this)">⚙️ Pengaturan Materi</button>
-    <button class="tab-btn" onclick="bukaTab('pengaturan', this)">🎯 Post-Test</button>
-    <button class="tab-btn" onclick="bukaTab('aktivitas', this)">📋 Aktivitas</button>
-    <button class="tab-btn" onclick="bukaTab('wabot', this)">🤖 WA Bot & AI</button>
-</div>
-
-<div class="container">
 
 <?php if ($pesan_akun): ?>
-    <div class="alert <?= str_starts_with($pesan_akun, '✓') ? 'alert-success' : 'alert-danger' ?>">
-        <?= htmlspecialchars($pesan_akun) ?>
+<div class="wrap" style="padding-bottom:0">
+    <div class="pt <?= str_starts_with($pesan_akun, '✓') ? 'buka' : 'kunci' ?>" style="padding:13px 16px">
+        <div class="pt-ic" style="width:32px;height:32px;font-size:15px">
+            <i class="<?= str_starts_with($pesan_akun, '✓') ? 'icon-circle-check' : 'icon-circle-alert' ?>"></i>
+        </div>
+        <div><b style="margin:0"><?= htmlspecialchars(ltrim($pesan_akun, '✓✗ ')) ?></b></div>
     </div>
+</div>
 <?php endif; ?>
 
-<!-- ══════════════════════════════════════════
-     TAB 1: RINGKASAN
-══════════════════════════════════════════ -->
+<!-- TAB NAV -->
+<div class="dtab-wrap">
+    <div class="dtabs">
+        <button class="tab-btn aktif" onclick="bukaTab('ringkasan', this)"><i class="icon-layout-dashboard"></i> Ringkasan</button>
+        <button class="tab-btn" onclick="bukaTab('siswa', this)"><i class="icon-users"></i> Siswa</button>
+        <button class="tab-btn" onclick="bukaTab('penilaian', this)"><i class="icon-clipboard-check"></i> Penilaian</button>
+        <button class="tab-btn" onclick="bukaTab('materi', this)"><i class="icon-folder-tree"></i> Materi</button>
+        <button class="tab-btn" onclick="bukaTab('pengaturan', this)"><i class="icon-target"></i> Post-Test</button>
+        <button class="tab-btn" onclick="bukaTab('aktivitas', this)"><i class="icon-activity"></i> Aktivitas</button>
+        <button class="tab-btn" onclick="bukaTab('wabot', this)"><i class="icon-bot"></i> WA Bot &amp; AI</button>
+    </div>
+</div>
+
+<div class="dwrap">
+
+<!-- ═══════════ TAB 1: RINGKASAN ═══════════ -->
 <div id="tab-ringkasan" class="tab-panel aktif">
 
-    <!-- STAT CARDS -->
     <div class="stat-grid">
         <div class="stat-card">
-            <div class="stat-label">Total Siswa</div>
-            <div class="stat-value"><?= $total_siswa ?></div>
-            <div class="stat-desc">terdaftar di sistem</div>
+            <div class="stat-ic" style="background:var(--biru-muda);color:var(--biru)"><i class="icon-users"></i></div>
+            <div><div class="stat-num"><?= $total_siswa ?></div><div class="stat-lbl">Total siswa</div></div>
         </div>
-        <div class="stat-card green">
-            <div class="stat-label">Pre-Test Selesai</div>
-            <div class="stat-value"><?= $total_pretest ?></div>
-            <div class="stat-desc">sesi pre-test</div>
+        <div class="stat-card">
+            <div class="stat-ic" style="background:var(--teal-muda);color:var(--teal)"><i class="icon-clipboard-check"></i></div>
+            <div><div class="stat-num"><?= $total_pretest ?></div><div class="stat-lbl">Pre-test terisi</div></div>
         </div>
-        <div class="stat-card orange">
-            <div class="stat-label">Rata-rata Skor</div>
-            <div class="stat-value"><?= $avg_skor ?></div>
-            <div class="stat-desc">dari 12 soal</div>
+        <div class="stat-card">
+            <div class="stat-ic" style="background:var(--amber-muda);color:var(--amber)"><i class="icon-activity"></i></div>
+            <div><div class="stat-num"><?= $total_aktivitas ?></div><div class="stat-lbl">Total aktivitas</div></div>
         </div>
-        <div class="stat-card purple">
-            <div class="stat-label">Total Aktivitas</div>
-            <div class="stat-value"><?= $total_aktivitas ?></div>
-            <div class="stat-desc">interaksi tercatat</div>
+        <div class="stat-card">
+            <div class="stat-ic" style="background:var(--ungu-muda);color:var(--ungu)"><i class="icon-star"></i></div>
+            <div><div class="stat-num"><?= $avg_skor !== null ? $avg_skor : '—' ?></div><div class="stat-lbl">Rata-rata skor pre</div></div>
         </div>
     </div>
 
-    <!-- DISTRIBUSI -->
-    <div class="charts-row">
+    <div class="dgrid2">
         <div class="card">
-            <div class="card-title">Distribusi Profil Belajar</div>
-            <?php
-            $total_p = array_sum(array_column($distribusi_profil, 'jumlah'));
-            foreach ($distribusi_profil as $dp):
-                $pct = $total_p > 0 ? round($dp['jumlah'] / $total_p * 100) : 0;
-            ?>
-            <div class="dist-row">
-                <div class="dist-label"><?= $label_profil[$dp['profil_learning']] ?? $dp['profil_learning'] ?></div>
-                <div class="dist-bar-wrap">
-                    <div class="dist-bar-fill" style="width:<?= $pct ?>%;background:<?= $warna_profil[$dp['profil_learning']] ?? '#888' ?>"></div>
+            <div class="card-h" style="margin-bottom:14px"><h3><i class="icon-chart-pie"></i> Distribusi profil belajar</h3></div>
+            <?php if ($distribusi_profil): ?>
+                <?php $maks_p = max(array_map(fn($d)=>(int)$d['jumlah'], $distribusi_profil)); ?>
+                <div style="display:flex;flex-direction:column;gap:11px">
+                    <?php foreach ($distribusi_profil as $d): $pct = $maks_p>0 ? round($d['jumlah']/$maks_p*100) : 0; ?>
+                        <div>
+                            <div style="display:flex;justify-content:space-between;font-size:12px;font-weight:600;margin-bottom:5px">
+                                <span><?= $label_profil[$d['profil_learning']] ?? $d['profil_learning'] ?></span>
+                                <span style="color:var(--biru);font-weight:800"><?= $d['jumlah'] ?> siswa</span>
+                            </div>
+                            <div class="bar tipis"><i style="width:<?= $pct ?>%;background:<?= $warna_profil[$d['profil_learning']] ?? 'var(--biru)' ?>"></i></div>
+                        </div>
+                    <?php endforeach; ?>
                 </div>
-                <div class="dist-count"><?= $dp['jumlah'] ?></div>
-            </div>
-            <?php endforeach; ?>
+            <?php else: ?>
+                <div class="kosong" style="padding:24px"><i class="icon-chart-pie"></i><p>Belum ada data pre-test.</p></div>
+            <?php endif; ?>
         </div>
-        <div class="card">
-            <div class="card-title">Distribusi Level Kemampuan</div>
-            <?php
-            $total_l = array_sum(array_column($distribusi_level, 'jumlah'));
-            foreach ($distribusi_level as $dl):
-                $pct = $total_l > 0 ? round($dl['jumlah'] / $total_l * 100) : 0;
-            ?>
-            <div class="dist-row">
-                <div class="dist-label"><?= $label_level[$dl['level_kemampuan']] ?? $dl['level_kemampuan'] ?></div>
-                <div class="dist-bar-wrap">
-                    <div class="dist-bar-fill" style="width:<?= $pct ?>%;background:<?= $warna_level[$dl['level_kemampuan']] ?? '#888' ?>"></div>
-                </div>
-                <div class="dist-count"><?= $dl['jumlah'] ?></div>
-            </div>
-            <?php endforeach; ?>
-        </div>
-    </div>
 
-    <!-- REKAP EVALUASI -->
-    <div class="card">
-        <div class="card-title">Rekap Skor Evaluasi per Topik</div>
-        <div class="table-wrap">
-            <table>
-                <thead><tr><th>Topik</th><th>Jumlah Quiz</th><th>Rata-rata Skor</th></tr></thead>
-                <tbody>
-                <?php foreach ($rekap_evaluasi as $r): ?>
-                <tr>
-                    <td><?= htmlspecialchars(ucwords(str_replace('_',' ',$r['topik']))) ?></td>
-                    <td><?= $r['jumlah_quiz'] ?> kali</td>
-                    <td>
-                        <?php $pct = (float)($r['rata_persen'] ?? 0); ?>
-                        <span class="badge" style="background:<?= $pct>=80?'#27ae60':($pct>=50?'#e67e22':'#e74c3c') ?>">
-                            <?= $pct ?>%
-                        </span>
-                    </td>
-                </tr>
-                <?php endforeach; ?>
-                </tbody>
-            </table>
+        <div class="card">
+            <div class="card-h" style="margin-bottom:14px"><h3><i class="icon-signal"></i> Distribusi level kemampuan</h3></div>
+            <?php if ($distribusi_level): ?>
+                <?php $maks_l = max(array_map(fn($d)=>(int)$d['jumlah'], $distribusi_level)); ?>
+                <div style="display:flex;flex-direction:column;gap:11px">
+                    <?php foreach ($distribusi_level as $d): $pct = $maks_l>0 ? round($d['jumlah']/$maks_l*100) : 0; ?>
+                        <div>
+                            <div style="display:flex;justify-content:space-between;font-size:12px;font-weight:600;margin-bottom:5px">
+                                <span><?= $label_level[$d['level_kemampuan']] ?? $d['level_kemampuan'] ?></span>
+                                <span style="color:var(--teal);font-weight:800"><?= $d['jumlah'] ?> siswa</span>
+                            </div>
+                            <div class="bar tipis"><i class="done" style="width:<?= $pct ?>%;background:<?= $warna_level[$d['level_kemampuan']] ?? 'var(--teal)' ?>"></i></div>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+            <?php else: ?>
+                <div class="kosong" style="padding:24px"><i class="icon-signal"></i><p>Belum ada data level.</p></div>
+            <?php endif; ?>
         </div>
     </div>
 </div>
 
-<!-- ══════════════════════════════════════════
-     TAB 2: SISWA
-══════════════════════════════════════════ -->
+<!-- ═══════════ TAB 2: SISWA ═══════════ -->
 <div id="tab-siswa" class="tab-panel">
 
     <!-- TAMBAH SISWA -->
-    <div class="card">
-        <div class="card-title">➕ Tambah Akun Siswa</div>
+    <div class="card" style="margin-bottom:16px">
+        <div class="card-h" style="margin-bottom:14px"><h3><i class="icon-user-plus"></i> Tambah akun siswa</h3></div>
         <form method="POST">
             <input type="hidden" name="aksi" value="tambah">
-            <div class="form-grid">
-                <div class="form-group"><label>NIS</label><input type="text" name="nis_baru" placeholder="NIS siswa" required></div>
-                <div class="form-group"><label>Nama Lengkap</label><input type="text" name="nama_baru" placeholder="Nama lengkap" required></div>
-                <div class="form-group">
+            <div class="dform-grid">
+                <div class="fg"><label>NIS</label><input type="text" name="nis_baru" placeholder="NIS siswa" required></div>
+                <div class="fg"><label>Nama Lengkap</label><input type="text" name="nama_baru" placeholder="Nama lengkap" required></div>
+                <div class="fg">
                     <label>Kelas</label>
                     <select name="kelas_baru">
                         <option value="">— Pilih —</option>
@@ -507,66 +272,52 @@ tr:hover td { background: #fafbff; }
                         <option value="XII TE 4">XII TE 4</option>
                     </select>
                 </div>
-                <div class="form-group"><label>Nomor WA</label><input type="text" name="wa_baru" placeholder="628xxx"></div>
-                <div class="form-group"><label>Password Awal</label><input type="text" name="pass_baru" placeholder="Password awal" required></div>
-                <div class="form-group"><label>&nbsp;</label><button type="submit" class="btn btn-primary" style="width:100%">+ Tambah Siswa</button></div>
+                <div class="fg"><label>Nomor WA</label><input type="text" name="wa_baru" placeholder="628xxx"></div>
+                <div class="fg"><label>Password Awal</label><input type="text" name="pass_baru" placeholder="Password awal" required></div>
+                <div class="fg" style="display:flex;align-items:flex-end">
+                    <button type="submit" class="btn btn-3 btn-full"><i class="icon-user-plus"></i> Tambah</button>
+                </div>
             </div>
         </form>
     </div>
 
-    <!-- ══════════════════════════════════════════
-     SISIPKAN INI: setelah card "Tambah Akun Siswa",
-     sebelum card "Daftar Siswa" di tab-siswa
-    ══════════════════════════════════════════ -->
-
     <!-- IMPORT EXCEL -->
-    <div class="card" style="margin-bottom:24px">
-        <div class="section-title">📥 Import Siswa dari Excel</div>
-
-        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:16px">
-            <a href="/api/template_siswa.php" target="_blank"
-            style="display:inline-block;padding:9px 18px;background:#27ae60;color:#fff;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none">
-                ⬇ Download Template Excel
-            </a>
-            <span style="font-size:12px;color:#666">
-                Download template → isi data siswa → upload di bawah
-            </span>
+    <div class="card" style="margin-bottom:16px">
+        <div class="card-h" style="margin-bottom:14px"><h3><i class="icon-file-spreadsheet"></i> Import siswa dari Excel</h3></div>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+            <a href="/api/template_siswa.php" target="_blank" class="btn btn-2 btn-sm"><i class="icon-download"></i> Download template</a>
+            <span style="font-size:12px;color:var(--abu-muda)">Download → isi data → upload di bawah</span>
         </div>
-
-        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
             <input type="file" id="file_import" accept=".xlsx,.xls"
-                style="padding:8px;border:2px solid #e0e0e0;border-radius:8px;font-size:13px;flex:1;min-width:200px">
-            <button onclick="importSiswa()"
-                    style="padding:9px 20px;background:#0f3460;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">
-                📤 Upload & Import
-            </button>
+                   style="flex:1;min-width:200px;padding:9px 12px;border:2px solid var(--garis);border-radius:var(--r-sm);font-size:13px;font-family:inherit">
+            <button onclick="importSiswa()" class="btn btn-1 btn-sm" style="white-space:nowrap"><i class="icon-upload"></i> Upload &amp; Import</button>
         </div>
-
         <div id="hasil_import" style="margin-top:14px;display:none"></div>
     </div>
 
     <!-- DAFTAR SISWA -->
     <div class="card">
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:16px">
-            <div class="card-title" style="margin:0">👥 Daftar Siswa (<?= count($siswa_list) ?>)</div>
+            <h3 style="font-size:14.5px;font-weight:800;display:flex;align-items:center;gap:7px;margin:0"><i class="icon-users" style="color:var(--teal)"></i> Daftar siswa (<?= count($siswa_list) ?>)</h3>
             <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-                <select id="filter_kelas" style="padding:7px 10px;border:1.5px solid #e0e0e0;border-radius:8px;font-size:13px">
+                <select id="filter_kelas" class="dfilter">
                     <option value="">Semua Kelas</option>
                     <?php foreach(['XI TE 1','XI TE 2','XI TE 3','XI TE 4','XII TE 1','XII TE 2','XII TE 3','XII TE 4'] as $k): ?>
                     <option value="<?= $k ?>"><?= $k ?></option>
                     <?php endforeach; ?>
                 </select>
-                <select id="filter_profil" style="padding:7px 10px;border:1.5px solid #e0e0e0;border-radius:8px;font-size:13px">
+                <select id="filter_profil" class="dfilter">
                     <option value="">Semua Profil</option>
                     <option value="guided">Guided-Step</option>
                     <option value="conceptual">Conceptual</option>
                     <option value="practice">Practice-Oriented</option>
                 </select>
-                <a href="api/ekspor_ngain.php" class="btn btn-success btn-sm" style="font-size:12px;padding:6px 14px">⬇ Ekspor CSV</a>
+                <a href="api/ekspor_ngain.php" class="btn btn-3 btn-sm" style="white-space:nowrap"><i class="icon-download"></i> Ekspor CSV</a>
             </div>
         </div>
         <div style="overflow-x:auto">
-        <table id="tabel_siswa" style="width:100%;font-size:13px">
+        <table id="tabel_siswa" style="width:100%" class="gtable">
             <thead>
                 <tr>
                     <th>#</th><th>NIS</th><th>Nama</th><th>Kelas</th>
@@ -585,19 +336,19 @@ tr:hover td { background: #fafbff; }
             ?>
             <tr data-kelas="<?= htmlspecialchars($s['kelas'] ?? '') ?>" data-profil="<?= htmlspecialchars($s['profil_learning'] ?? '') ?>">
                 <td><?= $i+1 ?></td>
-                <td><?= htmlspecialchars($s['nis'] ?? '-') ?></td>
+                <td><code><?= htmlspecialchars($s['nis'] ?? '-') ?></code></td>
                 <td><strong><?= htmlspecialchars($s['nama']) ?></strong></td>
                 <td><?= htmlspecialchars($s['kelas'] ?? '-') ?></td>
                 <td>
                     <?php if ($s['profil_learning']): ?>
-                    <span class="badge" style="background:<?= $warna_profil[$s['profil_learning']] ?? '#888' ?>;white-space:nowrap">
+                    <span class="dbadge" style="background:<?= $warna_profil[$s['profil_learning']] ?? '#888' ?>">
                         <?= $label_profil[$s['profil_learning']] ?? $s['profil_learning'] ?>
                     </span>
                     <?php else: ?>—<?php endif; ?>
                 </td>
                 <td>
                     <?php if ($s['level_kemampuan']): ?>
-                    <span class="badge" style="background:<?= $warna_level[$s['level_kemampuan']] ?? '#888' ?>">
+                    <span class="dbadge" style="background:<?= $warna_level[$s['level_kemampuan']] ?? '#888' ?>">
                         <?= $label_level[$s['level_kemampuan']] ?? $s['level_kemampuan'] ?>
                     </span>
                     <?php else: ?>—<?php endif; ?>
@@ -606,29 +357,28 @@ tr:hover td { background: #fafbff; }
                 <td><?= $s['skor_post'] !== null ? $s['skor_post'].'/12' : '-' ?></td>
                 <td>
                     <?php if ($ngain): ?>
-                    <span class="badge" style="background:<?= $ngain['warna'] ?>;white-space:nowrap">
+                    <span class="dbadge" style="background:<?= $ngain['warna'] ?>;white-space:nowrap">
                         <?= number_format($ngain['ngain'],2) ?> — <?= $ngain['kategori'] ?>
                     </span>
                     <?php else: ?>—<?php endif; ?>
                 </td>
-                <td style="font-size:12px;color:#888;white-space:nowrap"><?= $s['tgl_pretest'] ? date('d/m/Y', strtotime($s['tgl_pretest'])) : '-' ?></td>
+                <td style="font-size:12px;color:var(--abu-muda);white-space:nowrap"><?= $s['tgl_pretest'] ? date('d/m/Y', strtotime($s['tgl_pretest'])) : '-' ?></td>
                 <td>
-                    <div style="display:flex;flex-direction:column;gap:4px;min-width:160px">
-                        <button type="button" class="btn btn-sm btn-outline"
-                            style="background:#2980b9;color:#fff;border-color:#2980b9"
+                    <div style="display:flex;flex-direction:column;gap:4px;min-width:150px">
+                        <button type="button" class="btn btn-sm" style="background:var(--biru);color:#fff"
                             onclick="bukaModalEdit(<?= $s['id'] ?>, '<?= htmlspecialchars($s['nama'], ENT_QUOTES) ?>', '<?= htmlspecialchars($s['nis'], ENT_QUOTES) ?>', '<?= htmlspecialchars($s['kelas'], ENT_QUOTES) ?>', '<?= htmlspecialchars($s['nomor_wa'] ?? '', ENT_QUOTES) ?>')">
-                            ✏️ Edit
+                            <i class="icon-pencil"></i> Edit
                         </button>
                         <form method="POST" style="display:flex;gap:4px">
                             <input type="hidden" name="aksi" value="reset_password">
                             <input type="hidden" name="reset_id" value="<?= $s['id'] ?>">
-                            <input type="text" name="new_password" placeholder="Password baru" style="width:90px;padding:4px 6px;font-size:11px;border:1px solid #ddd;border-radius:4px">
-                            <button type="submit" class="btn btn-sm btn-outline">Reset</button>
+                            <input type="text" name="new_password" placeholder="Pass baru" style="width:82px;padding:5px 7px;font-size:11px;border:1px solid var(--garis);border-radius:6px;font-family:inherit">
+                            <button type="submit" class="btn btn-2 btn-sm" style="padding:5px 10px">Reset</button>
                         </form>
-                        <form method="POST" onsubmit="return confirm('Hapus akun <?= htmlspecialchars($s['nama']) ?>?')">
+                        <form method="POST" onsubmit="return confirm('Hapus akun <?= htmlspecialchars($s['nama'], ENT_QUOTES) ?>?')">
                             <input type="hidden" name="aksi" value="hapus">
                             <input type="hidden" name="hapus_id" value="<?= $s['id'] ?>">
-                            <button type="submit" class="btn btn-sm btn-danger">Hapus</button>
+                            <button type="submit" class="btn btn-sm" style="background:var(--coral-muda);color:var(--coral);width:100%"><i class="icon-trash-2"></i> Hapus</button>
                         </form>
                     </div>
                 </td>
@@ -639,6 +389,346 @@ tr:hover td { background: #fafbff; }
         </div>
     </div>
 </div>
+
+<!-- ═══════════ TAB 3: PENILAIAN JOBSHEET ═══════════ -->
+<div id="tab-penilaian" class="tab-panel">
+    <?php
+    $submissions = $pdo->query("
+        SELECT js.id, u.nama, u.nis, u.kelas, c.judul, c.topik,
+               js.file_path, js.file_original_name, js.nilai, js.created_at
+        FROM jobsheet_submissions js
+        JOIN users u ON u.id = js.user_id
+        JOIN content c ON c.id = js.content_id
+        ORDER BY js.created_at DESC
+    ")->fetchAll();
+    ?>
+    <div class="card">
+        <div class="card-h" style="margin-bottom:14px"><h3><i class="icon-paperclip"></i> Submission jobsheet siswa (<?= count($submissions) ?>)</h3></div>
+        <?php if ($submissions): ?>
+        <div style="overflow-x:auto">
+            <table class="gtable">
+                <thead><tr><th>Siswa</th><th>Kelas</th><th>Jobsheet</th><th>File</th><th>Tgl Upload</th><th>Nilai</th></tr></thead>
+                <tbody>
+                <?php foreach ($submissions as $sub): ?>
+                <tr>
+                    <td><strong><?= htmlspecialchars($sub['nama']) ?></strong><br><small style="color:var(--abu-muda)"><?= htmlspecialchars($sub['nis']) ?></small></td>
+                    <td><?= htmlspecialchars($sub['kelas'] ?? '-') ?></td>
+                    <td style="font-size:12.5px"><?= htmlspecialchars(mb_strimwidth($sub['judul'] ?? '-',0,32,'…')) ?></td>
+                    <td>
+                        <?php if ($sub['file_path']): ?>
+                            <a href="/<?= htmlspecialchars($sub['file_path']) ?>" target="_blank" class="dlink"><i class="icon-external-link"></i> <?= htmlspecialchars(mb_strimwidth($sub['file_original_name'] ?? 'file',0,20,'…')) ?></a>
+                        <?php else: ?>—<?php endif; ?>
+                    </td>
+                    <td style="font-size:12px;color:var(--abu-muda);white-space:nowrap"><?= date('d/m/y H:i', strtotime($sub['created_at'])) ?></td>
+                    <td>
+                        <form method="POST" action="api/nilai_jobsheet.php" style="display:flex;gap:5px;align-items:center">
+                            <input type="hidden" name="submission_id" value="<?= $sub['id'] ?>">
+                            <input type="number" name="nilai" min="0" max="100" value="<?= $sub['nilai'] !== null ? (int)$sub['nilai'] : '' ?>" placeholder="0-100"
+                                   style="width:64px;padding:6px 8px;font-size:12px;border:2px solid var(--garis);border-radius:6px;font-family:inherit">
+                            <button type="submit" class="btn btn-3 btn-sm" style="padding:6px 12px"><i class="icon-save"></i></button>
+                        </form>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+        <?php else: ?>
+        <div class="kosong" style="padding:30px"><i class="icon-paperclip"></i><b>Belum ada submission</b><p>Belum ada siswa yang mengupload jobsheet.</p></div>
+        <?php endif; ?>
+    </div>
+</div>
+
+<!-- ═══════════ TAB 4: PENGATURAN MATERI ═══════════ -->
+<div id="tab-materi" class="tab-panel">
+    <?php
+    $topik_tree_dash    = get_topik_tree();
+    $total_konten_semua = $pdo->query("SELECT COUNT(*) FROM content WHERE aktif=1")->fetchColumn();
+    $total_topik_semua  = $pdo->query("SELECT COUNT(*) FROM topik WHERE aktif=1")->fetchColumn();
+    if (!function_exists('hitungKonten')) {
+        function hitungKonten($pdo, $slug) {
+            $stmt = $pdo->prepare("SELECT tipe, COUNT(*) as jml FROM content WHERE topik=? AND aktif=1 GROUP BY tipe");
+            $stmt->execute([$slug]);
+            $result = ['teori'=>0,'langkah'=>0,'jobsheet'=>0,'evaluasi'=>0,'tantangan'=>0];
+            foreach ($stmt->fetchAll() as $r) if (isset($result[$r['tipe']])) $result[$r['tipe']] = $r['jml'];
+            $result['total'] = array_sum($result);
+            return $result;
+        }
+    }
+    ?>
+    <div class="cta" style="margin-bottom:16px">
+        <a href="kelola_konten.php" class="btn btn-3"><i class="icon-file-text"></i> Kelola Konten Materi</a>
+        <a href="kelola_topik.php" class="btn btn-2"><i class="icon-folder-tree"></i> Kelola Topik &amp; Sub-Topik</a>
+    </div>
+
+    <div class="dgrid2" style="margin-bottom:16px">
+        <div class="card" style="border-left:4px solid var(--biru)">
+            <div class="stat-lbl">Total topik aktif</div>
+            <div class="stat-num" style="margin-top:4px"><?= $total_topik_semua ?></div>
+            <div style="font-size:11.5px;color:var(--abu-muda)">termasuk sub-topik</div>
+        </div>
+        <div class="card" style="border-left:4px solid var(--teal)">
+            <div class="stat-lbl">Total konten aktif</div>
+            <div class="stat-num" style="margin-top:4px"><?= $total_konten_semua ?></div>
+            <div style="font-size:11.5px;color:var(--abu-muda)">di semua topik</div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-h" style="margin-bottom:14px"><h3><i class="icon-list-checks"></i> Ringkasan konten per topik</h3></div>
+        <div style="overflow-x:auto">
+            <table class="gtable">
+                <thead><tr><th>Topik</th><th style="text-align:center">Teori</th><th style="text-align:center">Langkah</th><th style="text-align:center">Jobsheet</th><th style="text-align:center">Evaluasi</th><th style="text-align:center">Tantangan</th><th style="text-align:center">Total</th><th style="text-align:center">Aksi</th></tr></thead>
+                <tbody>
+                <?php foreach ($topik_tree_dash as $parent): ?>
+                    <?php if (empty($parent['children'])): $k = hitungKonten($pdo, $parent['slug']); ?>
+                    <tr>
+                        <td><strong><?= htmlspecialchars($parent['nama']) ?></strong></td>
+                        <?php foreach (['teori','langkah','jobsheet','evaluasi','tantangan'] as $tipe): ?>
+                        <td style="text-align:center"><?= $k[$tipe] > 0 ? '<b style="color:var(--teal)">'.$k[$tipe].'</b>' : '<span style="color:var(--garis)">–</span>' ?></td>
+                        <?php endforeach; ?>
+                        <td style="text-align:center"><strong><?= $k['total'] ?></strong></td>
+                        <td style="text-align:center"><a href="kelola_konten.php" class="btn btn-2 btn-sm">Edit</a></td>
+                    </tr>
+                    <?php else: ?>
+                    <tr style="background:var(--kanvas)"><td colspan="8" style="font-size:11px;font-weight:800;color:var(--abu-muda);text-transform:uppercase;letter-spacing:.8px;padding:8px 12px"><?= htmlspecialchars($parent['nama']) ?></td></tr>
+                    <?php foreach ($parent['children'] as $child): $k = hitungKonten($pdo, $child['slug']); ?>
+                    <tr>
+                        <td style="padding-left:26px"><i class="icon-corner-down-right" style="color:var(--abu-muda);font-size:13px"></i> <?= htmlspecialchars($child['nama']) ?></td>
+                        <?php foreach (['teori','langkah','jobsheet','evaluasi','tantangan'] as $tipe): ?>
+                        <td style="text-align:center"><?= $k[$tipe] > 0 ? '<b style="color:var(--teal)">'.$k[$tipe].'</b>' : '<span style="color:var(--garis)">–</span>' ?></td>
+                        <?php endforeach; ?>
+                        <td style="text-align:center"><strong><?= $k['total'] ?></strong></td>
+                        <td style="text-align:center"><a href="kelola_konten.php" class="btn btn-2 btn-sm">Edit</a></td>
+                    </tr>
+                    <?php endforeach; ?>
+                    <?php endif; ?>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════ TAB 5: POST-TEST ═══════════ -->
+<div id="tab-pengaturan" class="tab-panel">
+    <?php
+    $pt_aktif  = get_pengaturan('posttest_aktif', '0');
+    $pt_mulai  = get_pengaturan('posttest_mulai');
+    $pt_durasi = get_pengaturan('posttest_durasi_hari', 21);
+    $pt_min    = get_pengaturan('min_materi_persen', 100);
+    ?>
+    <div class="card">
+        <div class="card-h" style="margin-bottom:16px"><h3><i class="icon-target"></i> Pengaturan post-test</h3></div>
+        <form method="POST">
+            <input type="hidden" name="aksi" value="setting_posttest">
+            <div class="dform-grid">
+                <div class="fg">
+                    <label>Status post-test</label>
+                    <label class="cbx" style="padding:9px 0"><input type="checkbox" name="posttest_aktif" value="1" <?= $pt_aktif === '1' ? 'checked' : '' ?>> Aktifkan akses post-test</label>
+                </div>
+                <div class="fg"><label>Tanggal mulai pembelajaran</label><input type="date" name="tgl_mulai" value="<?= htmlspecialchars($pt_mulai ?? date('Y-m-d')) ?>"></div>
+                <div class="fg"><label>Durasi pembelajaran (hari)</label><input type="number" name="durasi_hari" value="<?= htmlspecialchars($pt_durasi) ?>" min="1" max="180"></div>
+                <div class="fg"><label>Min. progress materi (%)</label><input type="number" name="min_persen" value="<?= htmlspecialchars($pt_min) ?>" min="1" max="100"></div>
+                <div class="fg" style="display:flex;align-items:flex-end"><button type="submit" class="btn btn-3 btn-full"><i class="icon-save"></i> Simpan pengaturan</button></div>
+            </div>
+        </form>
+        <div class="dstatus">
+            <strong>Status saat ini:</strong>
+            Post-test <b style="color:<?= $pt_aktif==='1'?'var(--teal)':'var(--coral)' ?>"><?= $pt_aktif === '1' ? '✓ AKTIF' : '✗ NONAKTIF' ?></b>
+            · Mulai: <b><?= $pt_mulai ? date('d/m/Y', strtotime($pt_mulai)) : '-' ?></b>
+            · Durasi: <b><?= $pt_durasi ?> hari</b>
+            · Min. progress: <b><?= $pt_min ?>%</b>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════ TAB 6: AKTIVITAS ═══════════ -->
+<div id="tab-aktivitas" class="tab-panel">
+    <div class="card">
+        <div class="card-h" style="margin-bottom:14px"><h3><i class="icon-activity"></i> Activity log terbaru (30)</h3></div>
+        <?php if ($aktivitas_terbaru): ?>
+        <div style="overflow-x:auto">
+            <table class="gtable">
+                <thead><tr><th>Waktu</th><th>Siswa</th><th>Kelas</th><th>Aktivitas</th><th>Topik</th><th>Detail</th></tr></thead>
+                <tbody>
+                <?php foreach ($aktivitas_terbaru as $a):
+                    $detail = json_decode($a['detail'] ?? '{}', true) ?? [];
+                    $warna_tipe = [
+                        'buka_materi'=>'#2563EB','selesai_materi'=>'#0EA5A4','jawab_quiz'=>'#7C3AED',
+                        'upload_jobsheet'=>'#F59E0B','login'=>'#94A3B8','pretest'=>'#F43F5E','tanya_bot'=>'#2563EB',
+                    ];
+                    $wt = $warna_tipe[$a['tipe']] ?? '#888';
+                ?>
+                <tr>
+                    <td style="font-size:12px;color:var(--abu-muda);white-space:nowrap"><?= date('d/m H:i', strtotime($a['created_at'])) ?></td>
+                    <td><strong><?= htmlspecialchars($a['nama']) ?></strong></td>
+                    <td><?= htmlspecialchars($a['kelas'] ?? '-') ?></td>
+                    <td><span class="dbadge" style="background:<?= $wt ?>"><?= strtoupper(str_replace('_',' ',$a['tipe'])) ?></span></td>
+                    <td style="font-size:12.5px"><?= htmlspecialchars(ucwords(str_replace('_',' ',$a['topik'] ?? '-'))) ?></td>
+                    <td style="font-size:12px;color:var(--abu-muda)">
+                        <?php if (isset($detail['judul'])): ?><?= htmlspecialchars(mb_strimwidth($detail['judul'],0,36,'…')) ?>
+                        <?php elseif (isset($detail['skor'])): ?>Skor: <?= $detail['skor'] ?>/<?= $detail['total'] ?? '?' ?> (<?= $detail['persentase'] ?? '?' ?>%)
+                        <?php elseif (isset($detail['profil_gabungan'])): ?><?= htmlspecialchars($detail['profil_gabungan']) ?>
+                        <?php else: ?>—<?php endif; ?>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+        <?php else: ?>
+        <div class="kosong" style="padding:30px"><i class="icon-activity"></i><b>Belum ada aktivitas</b></div>
+        <?php endif; ?>
+    </div>
+</div>
+
+<!-- ═══════════ TAB 7: WA BOT & AI ═══════════ -->
+<div id="tab-wabot" class="tab-panel">
+    <?php
+    $wa_provider = get_pengaturan('wa_ai_provider', 'groq');
+    $wa_model    = get_pengaturan('wa_ai_model', 'llama-3.1-8b-instant');
+    $wa_prompt   = get_pengaturan('wa_ai_prompt', '');
+    $wa_nomor    = get_pengaturan('wa_bot_nomor', '');
+    $wa_gateway  = get_pengaturan('wa_gateway', 'fonnte');
+    ?>
+
+    <div class="dgrid2">
+        <!-- Konfigurasi Gateway -->
+        <div class="card">
+            <div class="card-h" style="margin-bottom:16px"><h3><i class="icon-bot"></i> Konfigurasi WA Gateway</h3></div>
+            <form method="POST">
+                <input type="hidden" name="aksi" value="setting_wa_gateway">
+                <div class="fg">
+                    <label>Nomor WA Bot</label>
+                    <input type="text" name="wa_bot_nomor" value="<?= htmlspecialchars($wa_nomor) ?>" placeholder="628xxx">
+                </div>
+                <div class="fg">
+                    <label>Gateway</label>
+                    <select name="wa_gateway">
+                        <option value="fonnte"    <?= $wa_gateway === 'fonnte'    ? 'selected' : '' ?>>Fonnte</option>
+                        <option value="whacenter" <?= $wa_gateway === 'whacenter' ? 'selected' : '' ?>>Whacenter</option>
+                    </select>
+                </div>
+                <button type="submit" class="btn btn-3 btn-full"><i class="icon-save"></i> Simpan gateway</button>
+            </form>
+        </div>
+
+        <!-- Konfigurasi AI -->
+        <div class="card">
+            <div class="card-h" style="margin-bottom:16px"><h3><i class="icon-sparkles"></i> Konfigurasi AI</h3></div>
+            <form method="POST">
+                <input type="hidden" name="aksi" value="setting_ai">
+                <div class="fg">
+                    <label>Provider AI</label>
+                    <select name="wa_ai_provider">
+                        <option value="groq"   <?= $wa_provider === 'groq'   ? 'selected' : '' ?>>Groq</option>
+                        <option value="gemini" <?= $wa_provider === 'gemini' ? 'selected' : '' ?>>Gemini</option>
+                    </select>
+                </div>
+                <div class="fg">
+                    <label>Model</label>
+                    <input type="text" name="wa_ai_model" value="<?= htmlspecialchars($wa_model) ?>" placeholder="llama-3.1-8b-instant">
+                </div>
+                <div class="fg">
+                    <label>System prompt</label>
+                    <textarea name="wa_ai_prompt" rows="5" placeholder="Instruksi untuk AI bot…"><?= htmlspecialchars($wa_prompt) ?></textarea>
+                </div>
+                <button type="submit" class="btn btn-3 btn-full"><i class="icon-save"></i> Simpan konfigurasi AI</button>
+            </form>
+        </div>
+    </div>
+</div>
+
+</div><!-- /.dwrap -->
+
+<!-- MODAL EDIT SISWA -->
+<div id="modalEditSiswa" class="dmodal">
+    <div class="dmodal-box">
+        <h3 style="font-size:16px;font-weight:800;margin-bottom:18px;display:flex;align-items:center;gap:8px"><i class="icon-pencil" style="color:var(--biru)"></i> Edit data siswa</h3>
+        <form method="POST" id="formEditSiswa">
+            <input type="hidden" name="aksi" value="edit_siswa">
+            <input type="hidden" name="edit_id" id="edit_id">
+            <div class="fg"><label>Nama Lengkap <span style="color:var(--coral)">*</span></label><input type="text" name="edit_nama" id="edit_nama" required></div>
+            <div class="fg"><label>NIS <span style="color:var(--coral)">*</span></label><input type="text" name="edit_nis" id="edit_nis" required></div>
+            <div class="fg"><label>Kelas</label><input type="text" name="edit_kelas" id="edit_kelas"></div>
+            <div class="fg"><label>Nomor WA</label><input type="text" name="edit_wa" id="edit_wa"></div>
+            <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:6px">
+                <button type="button" onclick="tutupModalEdit()" class="btn btn-2 btn-sm">Batal</button>
+                <button type="submit" class="btn btn-3 btn-sm"><i class="icon-save"></i> Simpan</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<style>
+.dtab-wrap { background:var(--kartu); border-bottom:1px solid var(--garis); position:sticky; top:var(--topbar-h); z-index:40; }
+.dtabs { max-width:1200px; margin:0 auto; padding:0 16px; display:flex; gap:4px; overflow-x:auto; }
+.tab-btn { border:0; background:transparent; font-family:inherit; font-size:13px; font-weight:600; color:var(--abu);
+    padding:14px 16px; cursor:pointer; white-space:nowrap; border-bottom:3px solid transparent; transition:.15s;
+    display:flex; align-items:center; gap:6px; }
+.tab-btn:hover { color:var(--tinta); }
+.tab-btn.aktif { color:var(--teal); border-bottom-color:var(--teal); }
+
+.dwrap { max-width:1200px; margin:0 auto; padding:18px 16px 40px; }
+.tab-panel { display:none; }
+.tab-panel.aktif { display:block; }
+
+.stat-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:18px; }
+@media (max-width:768px){ .stat-grid { grid-template-columns:1fr 1fr; } }
+.stat-card { background:var(--kartu); border:1px solid var(--garis); border-radius:var(--r-md); padding:18px; display:flex; align-items:center; gap:14px; }
+.stat-ic { width:46px; height:46px; border-radius:13px; display:grid; place-items:center; font-size:22px; flex-shrink:0; }
+.stat-num { font-size:26px; font-weight:800; letter-spacing:-1px; line-height:1; }
+.stat-lbl { font-size:11.5px; color:var(--abu-muda); font-weight:600; margin-top:3px; }
+
+.dgrid2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+@media (max-width:768px){ .dgrid2 { grid-template-columns:1fr; } }
+
+.gtable { width:100%; border-collapse:collapse; font-size:13px; }
+.gtable thead tr { background:var(--kanvas); }
+.gtable th { padding:10px 12px; text-align:left; font-size:11px; font-weight:800; color:var(--abu-muda); text-transform:uppercase; letter-spacing:.5px; border-bottom:1px solid var(--garis); }
+.gtable td { padding:11px 12px; border-bottom:1px solid var(--garis); vertical-align:middle; }
+.gtable code { font-size:11.5px; color:var(--abu); background:var(--kanvas); padding:2px 7px; border-radius:6px; }
+
+.dbadge { display:inline-block; color:#fff; font-size:10.5px; font-weight:700; padding:3px 9px; border-radius:99px; }
+.dfilter { padding:7px 10px; border:1.5px solid var(--garis); border-radius:var(--r-sm); font-size:13px; font-family:inherit; }
+.dlink { color:var(--biru); text-decoration:none; font-weight:600; font-size:12px; display:inline-flex; align-items:center; gap:4px; }
+
+.fg { margin-bottom:14px; }
+.fg label { display:block; font-size:12px; font-weight:700; color:var(--tinta); margin-bottom:5px; }
+.fg input, .fg select, .fg textarea { width:100%; padding:10px 12px; border:2px solid var(--garis); border-radius:var(--r-sm); font-size:13px; font-family:inherit; outline:none; transition:.15s; color:var(--tinta); background:#fff; }
+.fg input:focus, .fg select:focus, .fg textarea:focus { border-color:var(--teal); background:var(--teal-muda); }
+.dform-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+@media (max-width:768px){ .dform-grid { grid-template-columns:1fr; } }
+.cbx { display:flex; align-items:center; gap:8px; font-size:13px; font-weight:600; color:var(--abu); cursor:pointer; }
+.cbx input { width:auto; accent-color:var(--teal); }
+
+.dstatus { margin-top:16px; background:var(--kanvas); border-radius:var(--r-sm); padding:12px 14px; font-size:12.5px; color:var(--abu); line-height:1.7; }
+
+.dmodal { display:none; position:fixed; inset:0; background:rgba(15,23,42,.5); z-index:9999; align-items:center; justify-content:center; padding:20px; }
+.dmodal-box { background:#fff; border-radius:var(--r-lg); padding:26px; width:100%; max-width:420px; box-shadow:0 20px 60px rgba(15,23,42,.3); }
+</style>
+
+<!-- jQuery + DataTables (dipertahankan) -->
+<script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+
+<script>
+// ── Tab switching (identik dgn asli) ─────────────────────────
+function bukaTab(id, el) {
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('aktif'));
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('aktif'));
+    document.getElementById('tab-' + id).classList.add('aktif');
+    el.classList.add('aktif');
+}
+window.addEventListener('DOMContentLoaded', function() {
+    var hash = window.location.hash.replace('#','');
+    if (hash) {
+        var btn = document.querySelector('[onclick*="' + hash + '"]');
+        if (btn) btn.click();
+    }
+});
+</script>
 
 <script>
 $(document).ready(function() {
@@ -653,29 +743,79 @@ $(document).ready(function() {
             paginate: { previous: "‹ Prev", next: "Next ›" }
         },
         columnDefs: [
-            { orderable: false, targets: [10] }, // kolom Aksi tidak sortable
+            { orderable: false, targets: [10] },
             { width: '30px', targets: [0] },
             { width: '80px', targets: [1] },
             { width: '70px', targets: [6,7] },
         ],
-        order: [[2, 'asc']], // default sort by nama
+        order: [[2, 'asc']],
         rowCallback: function(row, data, displayIndex, displayIndexFull) {
             $('td:first', row).html(displayIndexFull + 1);
         }
     });
 
-    // Filter kelas
-    $('#filter_kelas').on('change', function() {
-        table.column(3).search(this.value).draw();
+    // Filter kelas & profil pakai data-attribute (custom search)
+    $('#filter_kelas, #filter_profil').on('change', function() {
+        table.draw();
     });
 
-    // Filter profil
-    $('#filter_profil').on('change', function() {
-        table.column(4).search(this.value).draw();
+    $.fn.dataTable.ext.search.push(function(settings, data, dataIndex) {
+        var row      = table.row(dataIndex).node();
+        var fKelas   = $('#filter_kelas').val();
+        var fProfil  = $('#filter_profil').val();
+        var dKelas   = $(row).data('kelas') || '';
+        var dProfil  = $(row).data('profil') || '';
+
+        if (fKelas && dKelas !== fKelas) return false;
+        if (fProfil && dProfil.indexOf(fProfil) === -1) return false;
+        return true;
     });
 });
 
-// ── Import Excel dengan progress per batch ────────────────────────
+// ── Modal edit siswa ─────────────────────────────────────────
+function bukaModalEdit(id, nama, nis, kelas, wa) {
+    document.getElementById('edit_id').value    = id;
+    document.getElementById('edit_nama').value   = nama;
+    document.getElementById('edit_nis').value    = nis;
+    document.getElementById('edit_kelas').value  = kelas;
+    document.getElementById('edit_wa').value     = wa;
+    document.getElementById('modalEditSiswa').style.display = 'flex';
+}
+function tutupModalEdit() {
+    document.getElementById('modalEditSiswa').style.display = 'none';
+}
+document.getElementById('modalEditSiswa').addEventListener('click', function(e) {
+    if (e.target === this) tutupModalEdit();
+});
+
+// ── Normalisasi input WA ─────────────────────────────────────
+function attachWaInputHandler(el) {
+    if (!el) return;
+    el.addEventListener('keypress', function(e) {
+        if (!/[0-9]/.test(e.key)) e.preventDefault();
+    });
+    el.addEventListener('input', function() {
+        var pos = this.selectionStart;
+        var clean = this.value.replace(/[^0-9]/g, '');
+        if (clean.length >= 2 && clean.startsWith('6') && !clean.startsWith('62')) clean = '';
+        if (clean.length >= 1 && !['0','6'].includes(clean[0])) clean = '';
+        this.value = clean;
+        this.setSelectionRange(pos, pos);
+    });
+    el.addEventListener('paste', function(e) {
+        e.preventDefault();
+        var pasted = (e.clipboardData || window.clipboardData).getData('text');
+        var clean  = pasted.replace(/[^0-9]/g, '');
+        if (clean.startsWith('0')) clean = '62' + clean.substring(1);
+        else if (clean.startsWith('+62')) clean = '62' + clean.substring(3);
+        if (!clean.startsWith('08') && !clean.startsWith('628')) clean = '';
+        this.value = clean;
+    });
+}
+attachWaInputHandler(document.getElementById('edit_wa'));
+attachWaInputHandler(document.querySelector('input[name="wa_baru"]'));
+
+// ── Import Excel 2-langkah (identik dgn asli) ────────────────
 let importData = [];
 let importOffset = 0;
 const BATCH_SIZE = 20;
@@ -686,14 +826,13 @@ function importSiswa() {
 
     if (!fileInput.files.length) {
         hasilDiv.style.display = 'block';
-        hasilDiv.innerHTML = '<div style="padding:10px 14px;background:#fff0f0;color:#cc0000;border-radius:8px;font-size:13px;border:1px solid #ffcccc">⚠ Pilih file Excel terlebih dahulu.</div>';
+        hasilDiv.innerHTML = '<div class="dimsg err">⚠ Pilih file Excel terlebih dahulu.</div>';
         return;
     }
 
     hasilDiv.style.display = 'block';
-    hasilDiv.innerHTML = '<div style="padding:10px 14px;background:#f0f4ff;color:#0f3460;border-radius:8px;font-size:13px">⏳ Membaca file Excel...</div>';
+    hasilDiv.innerHTML = '<div class="dimsg info">⏳ Membaca file Excel…</div>';
 
-    // Step 1: upload file → parse → dapat total baris
     const formData = new FormData();
     formData.append('file_excel', fileInput.files[0]);
     formData.append('aksi', 'parse');
@@ -702,7 +841,7 @@ function importSiswa() {
     .then(r => r.json())
     .then(data => {
         if (data.status === 'error') {
-            hasilDiv.innerHTML = `<div style="padding:10px 14px;background:#fff0f0;color:#cc0000;border-radius:8px;font-size:13px;border:1px solid #ffcccc">✗ ${data.pesan}</div>`;
+            hasilDiv.innerHTML = `<div class="dimsg err">✗ ${data.pesan}</div>`;
             return;
         }
         importData   = data.rows;
@@ -710,682 +849,56 @@ function importSiswa() {
         prosesImport(hasilDiv, data.rows.length);
     })
     .catch(() => {
-        hasilDiv.innerHTML = '<div style="padding:10px 14px;background:#fff0f0;color:#cc0000;border-radius:8px;font-size:13px">✗ Gagal membaca file.</div>';
+        hasilDiv.innerHTML = '<div class="dimsg err">✗ Gagal membaca file. Coba lagi.</div>';
     });
 }
 
 function prosesImport(hasilDiv, total) {
-    if (importOffset >= total) {
-        hasilDiv.innerHTML = hasilDiv.innerHTML; // biarkan hasil akhir tampil
-        setTimeout(() => location.reload(), 2000);
-        return;
-    }
-
     const batch = importData.slice(importOffset, importOffset + BATCH_SIZE);
-    const pct   = Math.min(100, Math.round((importOffset / total) * 100));
+    if (batch.length === 0) return;
 
-    hasilDiv.innerHTML = `
-        <div style="margin-bottom:8px;font-size:13px;color:#0f3460;font-weight:600">
-            Mengimpor... ${importOffset}/${total} siswa (${pct}%)
-        </div>
-        <div style="background:#e0e0e0;border-radius:20px;height:12px;overflow:hidden">
-            <div style="width:${pct}%;background:#0f3460;height:100%;border-radius:20px;transition:width 0.3s ease"></div>
-        </div>`;
+    const is_last = (importOffset + BATCH_SIZE) >= total;
+    const pctNow  = Math.round((importOffset / total) * 100);
+
+    hasilDiv.innerHTML = `<div class="dimsg info">⏳ Mengimpor… ${importOffset}/${total} (${pctNow}%)</div>
+        <div class="bar" style="margin-top:8px"><i style="width:${pctNow}%"></i></div>`;
 
     fetch('/api/import_siswa.php', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ aksi: 'batch', rows: batch, is_last: (importOffset + BATCH_SIZE >= importData.length) })
+        body: JSON.stringify({ aksi: 'batch', rows: batch, is_last: is_last })
     })
     .then(r => r.json())
     .then(data => {
+        if (data.status === 'error') {
+            hasilDiv.innerHTML = `<div class="dimsg err">✗ ${data.pesan}</div>`;
+            return;
+        }
         importOffset += BATCH_SIZE;
-        const pctNow = Math.min(100, Math.round((importOffset / total) * 100));
-
-        if (importOffset >= total) {
-            // Selesai
-            let html = `
-                <div style="margin-bottom:8px;font-size:13px;color:#155724;font-weight:600">Selesai! ${pctNow}%</div>
-                <div style="background:#e0e0e0;border-radius:20px;height:12px;overflow:hidden;margin-bottom:12px">
-                    <div style="width:100%;background:#27ae60;height:100%;border-radius:20px"></div>
-                </div>
-                <div style="padding:10px 14px;background:#e8f8f0;color:#155724;border-radius:8px;font-size:13px;border:1px solid #c3e6cb">
-                    ✓ Import selesai — <strong>${data.total_berhasil} siswa berhasil</strong>, <strong>${data.total_gagal} dilewati</strong>.
-                </div>`;
+        if (importOffset < total) {
+            prosesImport(hasilDiv, total);
+        } else {
+            let html = `<div class="dimsg ok">✓ Import selesai — <strong>${data.total_berhasil} siswa berhasil</strong>${data.total_gagal ? `, <strong>${data.total_gagal} dilewati</strong>` : ''}.</div>`;
             if (data.detail_gagal && data.detail_gagal.length) {
-                html += `<div style="margin-top:8px;padding:10px 14px;background:#fff8e1;border-radius:8px;font-size:12px;border:1px solid #ffe082">
-                    <strong>Detail dilewati:</strong><br>${data.detail_gagal.map(s=>'• '+s).join('<br>')}
-                </div>`;
+                html += `<div class="dimsg warn" style="margin-top:8px"><strong>Detail dilewati:</strong><br>${data.detail_gagal.map(s=>'• '+s).join('<br>')}</div>`;
             }
             hasilDiv.innerHTML = html;
             setTimeout(() => location.reload(), 3000);
-        } else {
-            prosesImport(hasilDiv, total);
         }
     })
     .catch(() => {
-        hasilDiv.innerHTML += '<br><span style="color:red;font-size:12px">✗ Error pada batch, coba lagi.</span>';
-    });
-}
-</script>
-<!-- ══════════════════════════════════════════
-     TAB 3: PENILAIAN JOBSHEET
-══════════════════════════════════════════ -->
-<div id="tab-penilaian" class="tab-panel">
-    <?php
-    $submissions = $pdo->query("
-        SELECT js.id, u.nama, u.nis, u.kelas, c.judul, c.topik,
-               js.file_path, js.file_original_name, js.nilai, js.created_at
-        FROM jobsheet_submissions js
-        JOIN users u ON u.id = js.user_id
-        JOIN content c ON c.id = js.content_id
-        ORDER BY js.created_at DESC
-    ")->fetchAll();
-    ?>
-    <div class="card">
-        <div class="card-title">📎 Submission Jobsheet Siswa (<?= count($submissions) ?>)</div>
-        <?php if ($submissions): ?>
-        <div class="table-wrap">
-            <table>
-                <thead><tr><th>Siswa</th><th>Kelas</th><th>Jobsheet</th><th>File</th><th>Tgl Upload</th><th>Nilai</th></tr></thead>
-                <tbody>
-                <?php foreach ($submissions as $sub): ?>
-                <tr>
-                    <td><strong><?= htmlspecialchars($sub['nama']) ?></strong><br><small style="color:#888"><?= $sub['nis'] ?></small></td>
-                    <td><?= htmlspecialchars($sub['kelas'] ?? '-') ?></td>
-                    <td>
-                        <small style="color:#888"><?= ucwords(str_replace('_',' ',$sub['topik'])) ?></small><br>
-                        <?= htmlspecialchars(mb_strimwidth($sub['judul'],0,40,'...')) ?>
-                    </td>
-                    <td><a href="/<?= htmlspecialchars($sub['file_path']) ?>" target="_blank" style="color:#0f3460;font-size:13px">📄 <?= htmlspecialchars(mb_strimwidth($sub['file_original_name'],0,25,'...')) ?></a></td>
-                    <td style="font-size:12px;color:#666"><?= date('d/m/Y H:i', strtotime($sub['created_at'])) ?></td>
-                    <td>
-                        <form method="POST" action="api/nilai_jobsheet.php" style="display:flex;gap:6px;align-items:center">
-                            
-                            <input type="hidden" name="submission_id" value="<?= $sub['id'] ?>">
-                            <input type="number" name="nilai" min="0" max="100" step="0.5" value="<?= $sub['nilai'] ?? '' ?>" style="width:60px;padding:4px;border:1px solid #ccc;border-radius:4px;font-size:13px">
-                            <button type="submit" class="btn btn-sm btn-primary">Simpan</button>
-                        </form>
-                    </td>
-                </tr>
-                <?php endforeach; ?>
-                </tbody>
-            </table>
-        </div>
-        <?php else: ?>
-        <div class="empty-state">Belum ada submission jobsheet dari siswa.</div>
-        <?php endif; ?>
-    </div>
-</div>
-
-<!-- ══════════════════════════════════════════
-     TAB 4: PENGATURAN MATERI
-══════════════════════════════════════════ -->
-<div id="tab-materi" class="tab-panel">
-    <?php
-    $topik_tree_dash = get_topik_tree();
-    $total_konten_semua = $pdo->query("SELECT COUNT(*) FROM content WHERE aktif=1")->fetchColumn();
-    $total_topik_semua  = $pdo->query("SELECT COUNT(*) FROM topik WHERE aktif=1")->fetchColumn();
-    ?>
-
-    <!-- TOMBOL AKSI -->
-    <div style="display:flex;gap:16px;margin-bottom:24px">
-        <a href="kelola_konten.php" class="btn btn-primary" style="font-size:15px;padding:12px 24px">
-            Kelola Konten Materi
-        </a>
-        <a href="kelola_topik.php" class="btn btn-outline" style="font-size:15px;padding:12px 24px">
-            Kelola Topik &amp; Sub-Topik
-        </a>
-    </div>
-
-    <!-- RINGKASAN STAT -->
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px">
-        <div class="card" style="margin-bottom:0;border-left:4px solid #0f3460">
-            <div class="stat-label">Total Topik Aktif</div>
-            <div class="stat-value"><?= $total_topik_semua ?></div>
-            <div class="stat-desc">termasuk sub-topik</div>
-        </div>
-        <div class="card" style="margin-bottom:0;border-left:4px solid #27ae60">
-            <div class="stat-label">Total Konten Aktif</div>
-            <div class="stat-value"><?= $total_konten_semua ?></div>
-            <div class="stat-desc">di semua topik</div>
-        </div>
-    </div>
-
-    <!-- RINGKASAN PER TOPIK -->
-    <div class="card">
-        <div class="card-title">Ringkasan Konten per Topik</div>
-        <div class="table-wrap">
-            <table>
-                <thead><tr><th>Topik</th><th style="text-align:center">Teori</th><th style="text-align:center">Langkah</th><th style="text-align:center">Jobsheet</th><th style="text-align:center">Evaluasi</th><th style="text-align:center">Tantangan</th><th style="text-align:center">Total</th><th style="text-align:center">Aksi</th></tr></thead>
-                <tbody>
-                <?php
-                function hitungKonten($pdo, $slug) {
-                    $stmt = $pdo->prepare("SELECT tipe, COUNT(*) as jml FROM content WHERE topik=? AND aktif=1 GROUP BY tipe");
-                    $stmt->execute([$slug]);
-                    $result = ['teori'=>0,'langkah'=>0,'jobsheet'=>0,'evaluasi'=>0,'tantangan'=>0];
-                    foreach ($stmt->fetchAll() as $r) if (isset($result[$r['tipe']])) $result[$r['tipe']] = $r['jml'];
-                    $result['total'] = array_sum($result);
-                    return $result;
-                }
-                foreach ($topik_tree_dash as $parent):
-                    if (empty($parent['children'])):
-                        $k = hitungKonten($pdo, $parent['slug']);
-                ?>
-                <tr>
-                    <td><strong><?= htmlspecialchars($parent['nama']) ?></strong></td>
-                    <?php foreach (['teori','langkah','jobsheet','evaluasi','tantangan'] as $tipe): ?>
-                    <td style="text-align:center"><?= $k[$tipe] > 0 ? '<span style="color:#27ae60;font-weight:700">'.$k[$tipe].'</span>' : '<span style="color:#ddd">-</span>' ?></td>
-                    <?php endforeach; ?>
-                    <td style="text-align:center"><strong><?= $k['total'] ?></strong></td>
-                    <td style="text-align:center"><a href="kelola_konten.php" class="btn btn-sm btn-outline">Edit</a></td>
-                </tr>
-                <?php else: ?>
-                <tr style="background:#f8f9ff">
-                    <td colspan="8" style="font-size:12px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:0.8px;padding:8px 14px">
-                        <?= htmlspecialchars($parent['nama']) ?>
-                    </td>
-                </tr>
-                <?php foreach ($parent['children'] as $child):
-                    $k = hitungKonten($pdo, $child['slug']);
-                ?>
-                <tr>
-                    <td style="padding-left:28px">&#8627; <?= htmlspecialchars($child['nama']) ?></td>
-                    <?php foreach (['teori','langkah','jobsheet','evaluasi','tantangan'] as $tipe): ?>
-                    <td style="text-align:center"><?= $k[$tipe] > 0 ? '<span style="color:#27ae60;font-weight:700">'.$k[$tipe].'</span>' : '<span style="color:#ddd">-</span>' ?></td>
-                    <?php endforeach; ?>
-                    <td style="text-align:center"><strong><?= $k['total'] ?></strong></td>
-                    <td style="text-align:center"><a href="kelola_konten.php" class="btn btn-sm btn-outline">Edit</a></td>
-                </tr>
-                <?php endforeach; ?>
-                <?php endif; ?>
-                <?php endforeach; ?>
-                </tbody>
-            </table>
-        </div>
-    </div>
-</div>
-<!-- ══════════════════════════════════════════
-     TAB 5: POST-TEST
-══════════════════════════════════════════ -->
-<div id="tab-pengaturan" class="tab-panel">
-    <?php
-    $pt_aktif  = get_pengaturan('posttest_aktif', '0');
-    $pt_mulai  = get_pengaturan('posttest_mulai');
-    $pt_durasi = get_pengaturan('posttest_durasi_hari', 21);
-    $pt_min    = get_pengaturan('min_materi_persen', 100);
-    ?>
-    <div class="card">
-        <div class="card-title">🎯 Pengaturan Post-Test</div>
-        <form method="POST">
-            <input type="hidden" name="aksi" value="setting_posttest">
-            <div class="form-grid">
-                <div class="form-group">
-                    <label>Status Post-Test</label>
-                    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:14px;padding:9px 0">
-                        <input type="checkbox" name="posttest_aktif" value="1" <?= $pt_aktif === '1' ? 'checked' : '' ?>>
-                        Aktifkan akses post-test
-                    </label>
-                </div>
-                <div class="form-group">
-                    <label>Tanggal Mulai Pembelajaran</label>
-                    <input type="date" name="tgl_mulai" value="<?= htmlspecialchars($pt_mulai ?? date('Y-m-d')) ?>">
-                </div>
-                <div class="form-group">
-                    <label>Durasi Pembelajaran (hari)</label>
-                    <input type="number" name="durasi_hari" value="<?= htmlspecialchars($pt_durasi) ?>" min="1" max="180">
-                </div>
-                <div class="form-group">
-                    <label>Min. Progress Materi (%)</label>
-                    <input type="number" name="min_persen" value="<?= htmlspecialchars($pt_min) ?>" min="1" max="100">
-                </div>
-                <div class="form-group">
-                    <label>&nbsp;</label>
-                    <button type="submit" class="btn btn-success" style="width:100%">Simpan Pengaturan</button>
-                </div>
-            </div>
-        </form>
-        <div class="status-bar">
-            <strong>Status saat ini:</strong>
-            Post-test <strong><?= $pt_aktif === '1' ? '✓ AKTIF' : '✗ NONAKTIF' ?></strong>
-            · Mulai: <strong><?= $pt_mulai ? date('d/m/Y', strtotime($pt_mulai)) : '-' ?></strong>
-            · Durasi: <strong><?= $pt_durasi ?> hari</strong>
-            · Min. progress: <strong><?= $pt_min ?>%</strong>
-        </div>
-    </div>
-</div>
-
-<!-- ══════════════════════════════════════════
-     TAB 6: AKTIVITAS
-══════════════════════════════════════════ -->
-<div id="tab-aktivitas" class="tab-panel">
-    <div class="card">
-        <div class="card-title">📋 Activity Log Terbaru (30 terakhir)</div>
-        <?php if ($aktivitas_terbaru): ?>
-        <div class="table-wrap">
-            <table>
-                <thead><tr><th>Waktu</th><th>Siswa</th><th>Kelas</th><th>Aktivitas</th><th>Topik</th><th>Detail</th></tr></thead>
-                <tbody>
-                <?php foreach ($aktivitas_terbaru as $a):
-                    $detail = json_decode($a['detail'] ?? '{}', true) ?? [];
-                    $warna_tipe = [
-                        'buka_materi'     => '#2980b9',
-                        'selesai_materi'  => '#27ae60',
-                        'jawab_quiz'      => '#8e44ad',
-                        'upload_jobsheet' => '#e67e22',
-                        'login'           => '#95a5a6',
-                        'pretest'         => '#e74c3c',
-                    ];
-                    $wt = $warna_tipe[$a['tipe']] ?? '#888';
-                ?>
-                <tr>
-                    <td style="font-size:12px;color:#666;white-space:nowrap"><?= date('d/m H:i', strtotime($a['created_at'])) ?></td>
-                    <td><strong><?= htmlspecialchars($a['nama']) ?></strong></td>
-                    <td><?= htmlspecialchars($a['kelas'] ?? '-') ?></td>
-                    <td><span class="badge-tipe" style="background:<?= $wt ?>22;color:<?= $wt ?>;border:1px solid <?= $wt ?>44"><?= strtoupper(str_replace('_',' ',$a['tipe'])) ?></span></td>
-                    <td><?= htmlspecialchars(ucwords(str_replace('_',' ',$a['topik'] ?? '-'))) ?></td>
-                    <td style="font-size:12px;color:#666">
-                        <?php if (isset($detail['judul'])): ?>
-                            <?= htmlspecialchars(mb_strimwidth($detail['judul'],0,40,'...')) ?>
-                        <?php elseif (isset($detail['skor'])): ?>
-                            Skor: <?= $detail['skor'] ?>/<?= $detail['total'] ?? '?' ?> (<?= $detail['persentase'] ?? '?' ?>%)
-                        <?php elseif (isset($detail['profil_gabungan'])): ?>
-                            <?= htmlspecialchars($detail['profil_gabungan']) ?>
-                        <?php else: ?>—<?php endif; ?>
-                    </td>
-                </tr>
-                <?php endforeach; ?>
-                </tbody>
-            </table>
-        </div>
-        <?php else: ?>
-        <div class="empty-state">Belum ada aktivitas tercatat.</div>
-        <?php endif; ?>
-    </div>
-</div>
-
-</div><!-- /container -->
-
-<!-- ══════════════════════════════════════════
-     TAB 7: WA BOT & AI
-══════════════════════════════════════════ -->
-<div id="tab-wabot" class="tab-panel">
-
-    <!-- STATUS WA BOT -->
-    <div class="card">
-        <div class="card-title">📱 Status & Konfigurasi WA Bot</div>
-
-        <!-- Status ringkas -->
-        <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:20px">
-            <div style="padding:12px 20px;background:#e8f8f0;border-radius:10px;border:1px solid #c3e6cb;flex:1;min-width:180px">
-                <div style="font-size:11px;color:#666;margin-bottom:4px">Nomor Bot</div>
-                <div style="font-weight:700;color:#155724"><?= get_pengaturan('wa_bot_nomor', '-') ?></div>
-            </div>
-            <div style="padding:12px 20px;background:#e8f4fd;border-radius:10px;border:1px solid #b8daff;flex:1;min-width:180px">
-                <div style="font-size:11px;color:#666;margin-bottom:4px">Model AI Aktif</div>
-                <div style="font-weight:700;color:#0f3460"><?= get_pengaturan('wa_ai_model', 'llama-3.1-8b-instant') ?></div>
-            </div>
-            <div style="padding:12px 20px;background:#fff8e1;border-radius:10px;border:1px solid #ffe082;flex:1;min-width:180px">
-                <div style="font-size:11px;color:#666;margin-bottom:4px">Provider</div>
-                <div style="font-weight:700;color:#e67e22"><?= strtoupper(get_pengaturan('wa_ai_provider', 'groq')) ?></div>
-            </div>
-        </div>
-
-        <!-- Webhook URL -->
-        <div style="margin-bottom:20px">
-            <div style="font-size:13px;font-weight:600;color:#444;margin-bottom:8px">🔗 URL Webhook Fonnte</div>
-            <div style="display:flex;gap:8px;align-items:center">
-                <input type="text" id="webhook_url" readonly value="<?= APP_URL ?>/api/wa_webhook.php"
-                    style="flex:1;padding:9px 12px;border:2px solid #e0e0e0;border-radius:8px;font-size:13px;font-family:monospace;background:#f9f9f9;color:#333">
-                <button onclick="copyWebhook()"
-                    style="padding:9px 16px;background:#0f3460;color:#fff;border:none;border-radius:8px;font-size:13px;cursor:pointer;white-space:nowrap"
-                    id="btn_copy_webhook">📋 Copy</button>
-            </div>
-            <div style="font-size:11px;color:#888;margin-top:4px">Paste URL ini di pengaturan Webhook Fonnte → Device → Edit</div>
-        </div>
-
-        <!-- Form konfigurasi WA Gateway -->
-        <form method="POST">
-            <input type="hidden" name="aksi" value="setting_wa_gateway">
-
-            <!-- Pilih Gateway -->
-            <?php $gw_aktif = get_pengaturan('wa_gateway', 'fonnte'); ?>
-            <div style="margin-bottom:20px">
-                <label style="font-size:13px;font-weight:600;color:#444;display:block;margin-bottom:8px">Gateway Aktif</label>
-                <div style="display:flex;gap:10px;flex-wrap:wrap">
-                    <label style="display:flex;align-items:center;gap:8px;padding:10px 18px;border:2px solid <?= $gw_aktif==='fonnte' ? '#0f3460' : '#e0e0e0' ?>;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600">
-                        <input type="radio" name="wa_gateway" value="fonnte" <?= $gw_aktif==='fonnte' ? 'checked' : '' ?>>
-                        📱 Fonnte
-                    </label>
-                    <label style="display:flex;align-items:center;gap:8px;padding:10px 18px;border:2px solid <?= $gw_aktif==='whacenter' ? '#0f3460' : '#e0e0e0' ?>;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600">
-                        <input type="radio" name="wa_gateway" value="whacenter" <?= $gw_aktif==='whacenter' ? 'checked' : '' ?>>
-                        💬 Whacenter
-                    </label>
-                </div>
-            </div>
-
-            <!-- Nomor Bot -->
-            <div style="margin-bottom:16px">
-                <label style="font-size:13px;font-weight:600;color:#444;display:block;margin-bottom:6px">Nomor Bot (format: 628xxx)</label>
-                <input type="text" name="wa_bot_nomor" value="<?= htmlspecialchars(get_pengaturan('wa_bot_nomor', '')) ?>"
-                    placeholder="6285111308087"
-                    style="width:100%;padding:9px 12px;border:2px solid #e0e0e0;border-radius:8px;font-size:13px">
-                <div style="font-size:11px;color:#888;margin-top:3px">Nomor WA yang terhubung ke gateway aktif</div>
-            </div>
-
-            <!-- Info Fonnte -->
-            <div style="margin-bottom:16px;padding:14px 16px;background:#f0f4ff;border-radius:10px;border:1px solid #b8daff">
-                <div style="font-size:13px;font-weight:600;color:#0f3460;margin-bottom:8px">📱 Fonnte — Token Aktif</div>
-                <?php
-                $tok = defined('FONNTE_TOKEN') ? FONNTE_TOKEN : '';
-                $tok_sensor = $tok ? (substr($tok,0,4) . str_repeat('*', max(0,strlen($tok)-8)) . substr($tok,-4)) : '-';
-                ?>
-                <input type="text" readonly value="<?= htmlspecialchars($tok_sensor) ?>"
-                    style="width:100%;padding:8px 12px;border:1px solid #b8daff;border-radius:6px;font-size:12px;background:#fff;color:#666;font-family:monospace;margin-bottom:6px">
-                <div style="font-size:11px;color:#888">Tersensor. Ganti via SSH:</div>
-                <div style="display:flex;gap:8px;align-items:center;margin-top:4px">
-                    <code id="ssh_cmd" style="flex:1;padding:6px 10px;background:#1e1e2e;color:#a6e3a1;border-radius:6px;font-size:10px;display:block;overflow-x:auto;white-space:nowrap">sudo sed -i "s|define('FONNTE_TOKEN', '.*');|define('FONNTE_TOKEN', 'TOKEN_BARU');|" /var/www/html/aibotlms/config/config.php</code>
-                    <button onclick="copySSH()" id="btn_copy_ssh" style="padding:5px 10px;background:#1e1e2e;color:#a6e3a1;border:1px solid #a6e3a1;border-radius:6px;font-size:11px;cursor:pointer;white-space:nowrap">📋</button>
-                </div>
-            </div>
-
-            <!-- Info Whacenter -->
-            <div style="margin-bottom:20px;padding:14px 16px;background:#f0fff4;border-radius:10px;border:1px solid #c3e6cb">
-                <div style="font-size:13px;font-weight:600;color:#155724;margin-bottom:8px">💬 Whacenter — Device ID Aktif</div>
-                <?php
-                $wc = defined('WHACENTER_DEVICE_ID') ? WHACENTER_DEVICE_ID : '';
-                $wc_sensor = $wc ? (substr($wc,0,8) . str_repeat('*', max(0,strlen($wc)-16)) . substr($wc,-8)) : '-';
-                ?>
-                <input type="text" readonly value="<?= htmlspecialchars($wc_sensor) ?>"
-                    style="width:100%;padding:8px 12px;border:1px solid #c3e6cb;border-radius:6px;font-size:12px;background:#fff;color:#666;font-family:monospace;margin-bottom:6px">
-                <div style="font-size:11px;color:#888">Tersensor. Ganti via SSH:</div>
-                <div style="display:flex;gap:8px;align-items:center;margin-top:4px">
-                    <code id="ssh_cmd_wc" style="flex:1;padding:6px 10px;background:#1e1e2e;color:#a6e3a1;border-radius:6px;font-size:10px;display:block;overflow-x:auto;white-space:nowrap">sudo sed -i "s|define('WHACENTER_DEVICE_ID', '.*');|define('WHACENTER_DEVICE_ID', 'DEVICE_ID_BARU');|" /var/www/html/aibotlms/config/config.php</code>
-                    <button onclick="copySSHWC()" id="btn_copy_ssh_wc" style="padding:5px 10px;background:#1e1e2e;color:#a6e3a1;border:1px solid #a6e3a1;border-radius:6px;font-size:11px;cursor:pointer;white-space:nowrap">📋</button>
-                </div>
-            </div>
-
-            <button type="submit"
-                style="padding:9px 20px;background:#27ae60;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">
-                💾 Simpan Konfigurasi Gateway
-            </button>
-        </form>
-
-        <script>
-        function copyWebhook() {
-            const url = document.getElementById('webhook_url').value;
-            navigator.clipboard.writeText(url).then(() => {
-                const btn = document.getElementById('btn_copy_webhook');
-                btn.textContent = '✅ Tersalin!';
-                btn.style.background = '#27ae60';
-                setTimeout(() => {
-                    btn.textContent = '📋 Copy';
-                    btn.style.background = '#0f3460';
-                }, 2000);
-            });
-        }
-        function copySSH() {
-            const cmd = document.getElementById('ssh_cmd').textContent;
-            navigator.clipboard.writeText(cmd).then(() => {
-                const btn = document.getElementById('btn_copy_ssh');
-                btn.textContent = '✅ Tersalin!';
-                setTimeout(() => { btn.textContent = '📋 Copy'; }, 2000);
-            });
-        }
-        function copySSHWC() {
-            const cmd = document.getElementById('ssh_cmd_wc').textContent;
-            navigator.clipboard.writeText(cmd).then(() => {
-                const btn = document.getElementById('btn_copy_ssh_wc');
-                btn.textContent = '✅';
-                setTimeout(() => { btn.textContent = '📋'; }, 2000);
-            });
-        }
-        </script>
-    </div>
-
-    <!-- PENGATURAN MODEL AI -->
-    <div class="card">
-        <div class="card-title">🤖 Pilih Model AI</div>
-
-        <?php
-        $model_list = [
-            'groq' => [
-                'label' => 'Groq',
-                'models' => [
-                    ['id' => 'llama-3.1-8b-instant',                    'nama' => 'Llama 3.1 8B Instant',        'gratis' => true,  'desc' => 'Cepat, ringan, cocok untuk pertanyaan sederhana'],
-                    ['id' => 'llama-3.3-70b-versatile',                  'nama' => 'Llama 3.3 70B Versatile',     'gratis' => true,  'desc' => 'Lebih pintar, jawaban lebih detail'],
-                    ['id' => 'meta-llama/llama-4-scout-17b-16e-instruct','nama' => 'Llama 4 Scout 17B',           'gratis' => true,  'desc' => 'Model terbaru Meta, seimbang'],
-                    ['id' => 'qwen/qwen3-32b',                           'nama' => 'Qwen3 32B',                   'gratis' => true,  'desc' => 'Model Alibaba, kuat untuk sains & teknik'],
-                    ['id' => 'groq/compound',                            'nama' => 'Groq Compound',               'gratis' => false, 'desc' => 'Model compound Groq, berbayar'],
-                ],
-            ],
-            'gemini' => [
-                'label' => 'Google Gemini',
-                'models' => [
-                    ['id' => 'gemini-2.0-flash',      'nama' => 'Gemini 2.0 Flash',      'gratis' => false, 'desc' => 'Google Gemini terbaru, berbayar'],
-                    ['id' => 'gemini-2.0-flash-lite',  'nama' => 'Gemini 2.0 Flash Lite', 'gratis' => false, 'desc' => 'Lebih hemat, cocok untuk volume tinggi'],
-                ],
-            ],
-        ];
-        $provider_aktif = get_pengaturan('wa_ai_provider', 'groq');
-        $model_aktif    = get_pengaturan('wa_ai_model', 'llama-3.1-8b-instant');
-        ?>
-
-        <form method="POST" id="form_ai_setting">
-            <input type="hidden" name="aksi" value="setting_ai">
-
-            <!-- Pilih Provider -->
-            <div style="margin-bottom:20px">
-                <label style="font-size:13px;font-weight:600;color:#444;display:block;margin-bottom:8px">Provider AI</label>
-                <div style="display:flex;gap:10px;flex-wrap:wrap">
-                    <?php foreach ($model_list as $pkey => $pdata): ?>
-                    <label style="display:flex;align-items:center;gap:8px;padding:10px 16px;border:2px solid <?= $provider_aktif === $pkey ? '#0f3460' : '#e0e0e0' ?>;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600">
-                        <input type="radio" name="wa_ai_provider" value="<?= $pkey ?>" <?= $provider_aktif === $pkey ? 'checked' : '' ?> onchange="gantiProvider('<?= $pkey ?>')">
-                        <?= $pdata['label'] ?>
-                    </label>
-                    <?php endforeach; ?>
-                </div>
-            </div>
-
-            <!-- Daftar Model per Provider -->
-            <?php foreach ($model_list as $pkey => $pdata): ?>
-            <div id="models_<?= $pkey ?>" style="display:<?= $provider_aktif === $pkey ? 'block' : 'none' ?>;margin-bottom:20px">
-                <label style="font-size:13px;font-weight:600;color:#444;display:block;margin-bottom:8px">Model</label>
-                <div style="display:flex;flex-direction:column;gap:8px">
-                    <?php foreach ($pdata['models'] as $m): ?>
-                    <label style="display:flex;align-items:center;gap:12px;padding:12px 16px;border:2px solid <?= $model_aktif === $m['id'] ? '#0f3460' : '#e0e0e0' ?>;border-radius:8px;cursor:pointer">
-                        <input type="radio" name="wa_ai_model" value="<?= $m['id'] ?>" <?= $model_aktif === $m['id'] ? 'checked' : '' ?>>
-                        <div style="flex:1">
-                            <div style="font-size:13px;font-weight:600;color:#333">
-                                <?= $m['nama'] ?>
-                                <?php if ($m['gratis']): ?>
-                                <span style="background:#e8f8f0;color:#155724;font-size:10px;padding:2px 8px;border-radius:20px;font-weight:600;margin-left:6px">GRATIS</span>
-                                <?php else: ?>
-                                <span style="background:#fff0f0;color:#cc0000;font-size:10px;padding:2px 8px;border-radius:20px;font-weight:600;margin-left:6px">BERBAYAR</span>
-                                <?php endif; ?>
-                            </div>
-                            <div style="font-size:11px;color:#888;margin-top:2px"><?= $m['desc'] ?> · <code style="font-size:10px"><?= $m['id'] ?></code></div>
-                        </div>
-                        <button type="button" onclick="cekModel('<?= $pkey ?>', '<?= $m['id'] ?>', this)"
-                            style="padding:5px 12px;background:#f0f4ff;color:#0f3460;border:1px solid #b8daff;border-radius:6px;font-size:11px;cursor:pointer;white-space:nowrap">
-                            🔍 Cek
-                        </button>
-                    </label>
-                    <?php endforeach; ?>
-                </div>
-            </div>
-            <?php endforeach; ?>
-
-            <!-- System Prompt -->
-            <div style="margin-bottom:20px">
-                <label style="font-size:13px;font-weight:600;color:#444;display:block;margin-bottom:8px">System Prompt AI</label>
-                <textarea name="wa_ai_prompt" rows="5"
-                    style="width:100%;padding:10px 12px;border:2px solid #e0e0e0;border-radius:8px;font-size:13px;font-family:monospace;resize:vertical"
-                    placeholder="Kamu adalah asisten belajar..."><?= htmlspecialchars(get_pengaturan('wa_ai_prompt', '')) ?></textarea>
-                <div style="font-size:11px;color:#888;margin-top:4px">Kosongkan untuk menggunakan prompt default sistem.</div>
-            </div>
-
-            <button type="submit" style="padding:10px 24px;background:#0f3460;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">
-                💾 Simpan Pengaturan AI
-            </button>
-        </form>
-
-        <!-- Hasil cek model -->
-        <div id="hasil_cek_model" style="margin-top:16px;display:none"></div>
-    </div>
-
-</div>
-
-<script>
-function gantiProvider(provider) {
-    document.querySelectorAll('[id^="models_"]').forEach(el => el.style.display = 'none');
-    document.getElementById('models_' + provider).style.display = 'block';
-}
-
-function cekModel(provider, modelId, btn) {
-    const hasil = document.getElementById('hasil_cek_model');
-    hasil.style.display = 'block';
-    hasil.innerHTML = '<div style="padding:10px 14px;background:#f0f4ff;color:#0f3460;border-radius:8px;font-size:13px">🔍 Mengecek model <code>' + modelId + '</code>...</div>';
-    btn.disabled = true;
-    btn.textContent = '⏳';
-
-    fetch('/api/cek_model_ai.php', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({provider: provider, model: modelId})
-    })
-    .then(r => r.json())
-    .then(data => {
-        btn.disabled = false;
-        btn.textContent = '🔍 Cek';
-        if (data.status === 'ok') {
-            hasil.innerHTML = '<div style="padding:10px 14px;background:#e8f8f0;color:#155724;border-radius:8px;font-size:13px;border:1px solid #c3e6cb">✅ Model <strong>' + modelId + '</strong> tersedia dan merespons normal.<br><small style="color:#888">Respons: ' + data.preview + '</small></div>';
-        } else {
-            hasil.innerHTML = '<div style="padding:10px 14px;background:#fff0f0;color:#cc0000;border-radius:8px;font-size:13px;border:1px solid #ffcccc">❌ Model tidak tersedia: ' + data.pesan + '</div>';
-        }
-    })
-    .catch(() => {
-        btn.disabled = false;
-        btn.textContent = '🔍 Cek';
-        hasil.innerHTML = '<div style="padding:10px 14px;background:#fff0f0;color:#cc0000;border-radius:8px;font-size:13px">❌ Gagal menghubungi server.</div>';
+        hasilDiv.innerHTML += '<div class="dimsg err" style="margin-top:8px">✗ Error pada batch, coba lagi.</div>';
     });
 }
 </script>
 
-<script>
-function bukaTab(id, el) {
-    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('aktif'));
-    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('aktif'));
-    document.getElementById('tab-' + id).classList.add('aktif');
-    el.classList.add('aktif');
-}
+<style>
+.dimsg { padding:10px 14px; border-radius:var(--r-sm); font-size:13px; font-weight:500; }
+.dimsg.info { background:var(--biru-muda); color:var(--biru-tua); }
+.dimsg.ok   { background:var(--teal-muda); color:var(--teal); border:1px solid #99E6E5; }
+.dimsg.err  { background:var(--coral-muda); color:var(--coral); border:1px solid #FCA5A5; }
+.dimsg.warn { background:var(--amber-muda); color:#B45309; border:1px solid #FCD34D; }
+</style>
 
-// Buka tab dari URL hash
-window.addEventListener('DOMContentLoaded', function() {
-    var hash = window.location.hash.replace('#','');
-    if (hash) {
-        var btn = document.querySelector('[onclick*="' + hash + '"]');
-        if (btn) btn.click();
-    }
-});
-</script>
-
-<!-- Modal Edit Siswa -->
-<div id="modalEditSiswa" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:9999;align-items:center;justify-content:center">
-    <div style="background:#fff;border-radius:10px;padding:28px 32px;width:420px;max-width:95vw;box-shadow:0 8px 32px rgba(0,0,0,0.18)">
-        <h3 style="margin:0 0 20px 0;color:#1a2a4a;font-size:16px">✏️ Edit Data Siswa</h3>
-        <form method="POST" id="formEditSiswa">
-            <input type="hidden" name="aksi" value="edit_siswa">
-            <input type="hidden" name="edit_id" id="edit_id">
-            <div style="margin-bottom:14px">
-                <label style="display:block;font-size:13px;font-weight:600;margin-bottom:4px;color:#333">Nama Lengkap <span style="color:red">*</span></label>
-                <input type="text" name="edit_nama" id="edit_nama" required
-                    style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;box-sizing:border-box">
-            </div>
-            <div style="margin-bottom:14px">
-                <label style="display:block;font-size:13px;font-weight:600;margin-bottom:4px;color:#333">NIS <span style="color:red">*</span></label>
-                <input type="text" name="edit_nis" id="edit_nis" required
-                    style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;box-sizing:border-box">
-            </div>
-            <div style="margin-bottom:14px">
-                <label style="display:block;font-size:13px;font-weight:600;margin-bottom:4px;color:#333">Kelas</label>
-                <input type="text" name="edit_kelas" id="edit_kelas"
-                    style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;box-sizing:border-box">
-            </div>
-            <div style="margin-bottom:20px">
-                <label style="display:block;font-size:13px;font-weight:600;margin-bottom:4px;color:#333">Nomor WA</label>
-                <input type="text" name="edit_wa" id="edit_wa"
-                    style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;box-sizing:border-box">
-            </div>
-            <div style="display:flex;gap:10px;justify-content:flex-end">
-                <button type="button" onclick="tutupModalEdit()"
-                    style="padding:8px 18px;border:1px solid #ddd;border-radius:6px;background:#f5f5f5;cursor:pointer;font-size:13px">
-                    Batal
-                </button>
-                <button type="submit"
-                    style="padding:8px 18px;border:none;border-radius:6px;background:#27ae60;color:#fff;cursor:pointer;font-size:13px;font-weight:600">
-                    💾 Simpan
-                </button>
-            </div>
-        </form>
-    </div>
-</div>
-
-<script>
-function bukaModalEdit(id, nama, nis, kelas, wa) {
-    document.getElementById('edit_id').value   = id;
-    document.getElementById('edit_nama').value  = nama;
-    document.getElementById('edit_nis').value   = nis;
-    document.getElementById('edit_kelas').value = kelas;
-    document.getElementById('edit_wa').value    = wa;
-    var modal = document.getElementById('modalEditSiswa');
-    modal.style.display = 'flex';
-}
-function tutupModalEdit() {
-    document.getElementById('modalEditSiswa').style.display = 'none';
-}
-// Tutup modal jika klik di luar
-document.getElementById('modalEditSiswa').addEventListener('click', function(e) {
-    if (e.target === this) tutupModalEdit();
-});
-
-// Normalisasi input nomor WA di UI
-function attachWaInputHandler(el) {
-    if (!el) return;
-    el.addEventListener('keypress', function(e) {
-        if (!/[0-9]/.test(e.key)) e.preventDefault();
-    });
-    el.addEventListener('input', function() {
-        var pos = this.selectionStart;
-        var clean = this.value.replace(/[^0-9]/g, '');
-        // Validasi awalan: hanya boleh 08 atau 628
-        if (clean.length >= 2 && clean.startsWith('6') && !clean.startsWith('62')) {
-            clean = '';
-        }
-        if (clean.length >= 1 && !['0','6'].includes(clean[0])) {
-            clean = '';
-        }
-        this.value = clean;
-        this.setSelectionRange(pos, pos);
-    });
-    el.addEventListener('paste', function(e) {
-        e.preventDefault();
-        var pasted = (e.clipboardData || window.clipboardData).getData('text');
-        var clean  = pasted.replace(/[^0-9]/g, '');
-        // Normalisasi awalan
-        if (clean.startsWith('0')) {
-            clean = '62' + clean.substring(1);
-        } else if (clean.startsWith('+62')) {
-            clean = '62' + clean.substring(3);
-        }
-        // Validasi awalan akhir
-        if (!clean.startsWith('08') && !clean.startsWith('628')) clean = '';
-        this.value = clean;
-    });
-}
-
-attachWaInputHandler(document.getElementById('edit_wa'));
-attachWaInputHandler(document.querySelector('input[name="wa_baru"]'));
-</script>
 </body>
 </html>
