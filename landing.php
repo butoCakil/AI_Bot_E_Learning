@@ -3,116 +3,110 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#2563EB">
 <title>AdaptLearn PRE — SMK Negeri Bansari</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/lucide-static@1.25.0/font/lucide.css" rel="stylesheet">
+<link rel="stylesheet" href="/assets/style.css">
 <style>
-* { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
-
-* { box-sizing: border-box; margin: 0; padding: 0; }
-html, body { overflow: hidden; height: 100%; }
-body {
-    font-family: 'Segoe UI', sans-serif;
-    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+.lg-bg {
     min-height: 100vh;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 12px;
+    background: linear-gradient(160deg, var(--biru) 0%, var(--biru-tua) 100%);
+    display: flex; align-items: center; justify-content: center;
+    padding: 24px 16px; position: relative; overflow: hidden;
 }
-.wrapper { width: 100%; max-width: 780px; }
-
-/* HEADER */
-.header { text-align: center; margin-bottom: 20px; color: #fff; }
-.header h1 { font-size: 28px; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 6px; }
-.header h1 span { color: #64b5f6; }
-.header p { font-size: 13px; opacity: 0.75; margin-bottom: 10px; }
-.badge { display: inline-block; background: rgba(255,255,255,0.15); color: #fff; font-size: 11px; font-weight: 600; padding: 4px 14px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.2); }
-
-/* CARDS */
-.cards { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
-.card {
-    background: #fff;
-    border-radius: 16px;
-    padding: 20px 24px;
-    text-align: center;
-    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-    transition: transform 0.2s;
+.lg-bg::before, .lg-bg::after {
+    content: ''; position: absolute; border-radius: 50%;
+    background: rgba(255,255,255,.06);
 }
-.card:hover { transform: translateY(-4px); }
-.card-icon { font-size: 36px; margin-bottom: 10px; }
-.card h2 { font-size: 17px; color: #1a1a2e; margin-bottom: 6px; }
-.card p { font-size: 12px; color: #777; line-height: 1.5; margin-bottom: 14px; }
-.card ul { text-align: left; font-size: 12px; color: #555; margin-bottom: 16px; padding-left: 0; list-style: none; }
-.card ul li { padding: 4px 0; border-bottom: 1px solid #f0f0f0; }
-.card ul li:last-child { border-bottom: none; }
-.card ul li::before { content: '✓ '; color: #27ae60; font-weight: 700; }
-.btn {
-    display: block;
-    padding: 11px;
-    border-radius: 10px;
-    font-size: 13px;
-    font-weight: 700;
-    text-decoration: none;
-    transition: all 0.2s;
+.lg-bg::before { width: 340px; height: 340px; top: -120px; right: -80px; }
+.lg-bg::after  { width: 260px; height: 260px; bottom: -100px; left: -60px; }
+.lg-wrap { width: 100%; max-width: 760px; position: relative; z-index: 1; }
+.lg-head { text-align: center; color: #fff; margin-bottom: 24px; }
+.lg-mark {
+    width: 56px; height: 56px; border-radius: 18px; background: rgba(255,255,255,.15);
+    display: grid; place-items: center; font-size: 28px; margin: 0 auto 14px;
+    border: 1px solid rgba(255,255,255,.2);
 }
-.btn-siswa { background: #0f3460; color: #fff; }
-.btn-siswa:hover { background: #16213e; }
-.btn-guru { background: #27ae60; color: #fff; }
-.btn-guru:hover { background: #219150; }
-
-/* FOOTER */
-.footer { text-align: center; color: rgba(255,255,255,0.4); font-size: 12px; }
-
-@media (max-width: 600px) {
-    .cards { grid-template-columns: 1fr; }
-    .header h1 { font-size: 26px; }
+.lg-head h1 { font-size: 30px; font-weight: 800; letter-spacing: -.8px; }
+.lg-head p { font-size: 13.5px; opacity: .8; margin: 6px 0 12px; }
+.lg-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: rgba(255,255,255,.15); color: #fff; font-size: 11.5px; font-weight: 700;
+    padding: 6px 14px; border-radius: 99px; border: 1px solid rgba(255,255,255,.2);
 }
+.lg-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+.lg-card {
+    background: #fff; border-radius: var(--r-lg); padding: 24px; text-align: center;
+    box-shadow: 0 18px 50px rgba(15,23,42,.22); transition: transform .2s;
+    display: flex; flex-direction: column;
+}
+.lg-card:hover { transform: translateY(-4px); }
+.lg-ic { width: 54px; height: 54px; border-radius: 16px; display: grid; place-items: center; font-size: 26px; margin: 0 auto 14px; }
+.lg-ic.s { background: var(--biru-muda); color: var(--biru); }
+.lg-ic.g { background: var(--teal-muda); color: var(--teal); }
+.lg-card h2 { font-size: 17px; font-weight: 800; margin-bottom: 6px; }
+.lg-card > p { font-size: 12.5px; color: var(--abu); line-height: 1.55; margin-bottom: 14px; }
+.lg-list { list-style: none; text-align: left; margin-bottom: 18px; flex: 1; }
+.lg-list li { font-size: 12.5px; color: var(--abu); padding: 6px 0; display: flex; align-items: center; gap: 8px; }
+.lg-list li i { color: var(--teal); font-size: 15px; flex-shrink: 0; }
+.lg-foot { text-align: center; color: rgba(255,255,255,.55); font-size: 12px; margin-top: 18px; }
+.lg-foot a { color: rgba(255,255,255,.9); }
+@media (max-width: 600px) { .lg-cards { grid-template-columns: 1fr; } .lg-head h1 { font-size: 26px; } }
 </style>
 </head>
 <body>
-<div class="wrapper">
+<div class="lg-bg">
+    <div class="lg-wrap">
 
-    <div class="header">
-        <h1>AdaptLearn <span>PRE</span></h1>
-        <p>Platform E-Learning Adaptif — Penerapan Rangkaian Elektronika</p>
-        <span class="badge">🏫 SMK Negeri Bansari</span>
-    </div>
-
-    <div class="cards">
-        <!-- SISWA -->
-        <div class="card">
-            <div class="card-icon">🎓</div>
-            <h2>Saya Siswa</h2>
-            <p>Akses materi pembelajaran yang disesuaikan dengan profil dan kemampuan belajarmu.</p>
-            <ul>
-                <li>Pre-test klasifikasi profil belajar</li>
-                <li>Materi adaptif per topik</li>
-                <li>Evaluasi dan jobsheet</li>
-                <li>Post-test dan N-Gain</li>
-            </ul>
-            <a href="login.php" class="btn btn-siswa">Masuk sebagai Siswa →</a>
+        <div class="lg-head">
+            <div class="lg-mark"><i class="icon-cpu"></i></div>
+            <h1>AdaptLearn PRE</h1>
+            <p>Platform E-Learning Adaptif — Penerapan Rangkaian Elektronika</p>
+            <span class="lg-chip"><i class="icon-school"></i> SMK Negeri Bansari</span>
         </div>
 
-        <!-- GURU -->
-        <div class="card">
-            <div class="card-icon">👨‍🏫</div>
-            <h2>Saya Guru</h2>
-            <p>Pantau perkembangan siswa, kelola akun, dan atur pengaturan pembelajaran.</p>
-            <ul>
-                <li>Monitor progress siswa</li>
-                <li>Kelola akun dan kelas</li>
-                <li>Nilai jobsheet siswa</li>
-                <li>Atur akses post-test</li>
-            </ul>
-            <a href="login_guru.php" class="btn btn-guru">Masuk sebagai Guru →</a>
-        </div>
-    </div>
-    <div style="text-align:center;margin-bottom:20px">
-        <a href="panduan.php" target="_blank" style="display:inline-block;padding:10px 24px;background:rgba(255,255,255,.15);color:#fff;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none;border:1px solid rgba(255,255,255,.3)">📘 Panduan Penggunaan</a>
-    </div>
-    <div class="footer">
-        AdaptLearn PRE · SMK Negeri Bansari · 2026
-    </div>
+        <div class="lg-cards">
+            <div class="lg-card">
+                <div class="lg-ic s"><i class="icon-graduation-cap"></i></div>
+                <h2>Saya Siswa</h2>
+                <p>Akses materi pembelajaran yang disesuaikan dengan profil dan kemampuan belajarmu.</p>
+                <ul class="lg-list">
+                    <li><i class="icon-check"></i> Pre-test klasifikasi profil belajar</li>
+                    <li><i class="icon-check"></i> Materi adaptif per topik</li>
+                    <li><i class="icon-check"></i> Evaluasi dan jobsheet</li>
+                    <li><i class="icon-check"></i> Post-test dan N-Gain</li>
+                </ul>
+                <a href="login.php" class="btn btn-1 btn-full">Masuk sebagai Siswa <i class="icon-arrow-right"></i></a>
+            </div>
 
+            <div class="lg-card">
+                <div class="lg-ic g"><i class="icon-presentation"></i></div>
+                <h2>Saya Guru</h2>
+                <p>Pantau perkembangan siswa, kelola akun, dan atur pengaturan pembelajaran.</p>
+                <ul class="lg-list">
+                    <li><i class="icon-check"></i> Monitor progress siswa</li>
+                    <li><i class="icon-check"></i> Kelola akun dan kelas</li>
+                    <li><i class="icon-check"></i> Nilai jobsheet siswa</li>
+                    <li><i class="icon-check"></i> Atur akses post-test</li>
+                </ul>
+                <a href="login_guru.php" class="btn btn-3 btn-full">Masuk sebagai Guru <i class="icon-arrow-right"></i></a>
+            </div>
+        </div>
+
+        <div style="text-align:center">
+            <a href="panduan.php" target="_blank" class="lg-chip" style="text-decoration:none;cursor:pointer">
+                <i class="icon-book-open"></i> Panduan Penggunaan
+            </a>
+        </div>
+
+        <div class="lg-foot">
+            AdaptLearn PRE · SMK Negeri Bansari · 2026
+        </div>
+
+    </div>
 </div>
 </body>
 </html>
