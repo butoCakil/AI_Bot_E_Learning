@@ -122,6 +122,16 @@ $aktivitas_terbaru = $pdo->query("
     LIMIT 30
 ")->fetchAll();
 
+// ── Rekap skor evaluasi per topik ────────────────────────────
+$rekap_evaluasi = $pdo->query("
+    SELECT topik,
+           COUNT(*) as jumlah_quiz,
+           ROUND(AVG(JSON_EXTRACT(detail, '$.persentase')), 1) as rata_persen
+    FROM activity_log
+    WHERE tipe = 'jawab_quiz'
+    GROUP BY topik
+")->fetchAll();
+
 // ── Label & warna ────────────────────────────────────────────
 $label_profil = [
     'guided_step'       => 'Guided-Step',
@@ -244,6 +254,32 @@ include __DIR__ . '/includes/topbar_guru.php';
                 <div class="kosong" style="padding:24px"><i class="icon-signal"></i><p>Belum ada data level.</p></div>
             <?php endif; ?>
         </div>
+    </div>
+
+    <!-- REKAP SKOR EVALUASI PER TOPIK -->
+    <div class="card">
+        <div class="card-h" style="margin-bottom:14px"><h3><i class="icon-clipboard-list"></i> Rekap skor evaluasi per topik</h3></div>
+        <?php if ($rekap_evaluasi): ?>
+        <div style="overflow-x:auto">
+            <table class="gtable">
+                <thead><tr><th>Topik</th><th style="text-align:center">Jumlah Quiz</th><th style="text-align:center">Rata-rata Skor</th></tr></thead>
+                <tbody>
+                <?php foreach ($rekap_evaluasi as $r): ?>
+                    <?php $pct = (float)($r['rata_persen'] ?? 0); ?>
+                    <tr>
+                        <td><strong><?= htmlspecialchars(ucwords(str_replace('_',' ',$r['topik'] ?? '-'))) ?></strong></td>
+                        <td style="text-align:center"><?= (int)$r['jumlah_quiz'] ?> kali</td>
+                        <td style="text-align:center">
+                            <span class="dbadge" style="background:<?= $pct>=80?'var(--teal)':($pct>=50?'var(--amber)':'var(--coral)') ?>"><?= $pct ?>%</span>
+                        </td>
+                    </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+        <?php else: ?>
+        <div class="kosong" style="padding:24px"><i class="icon-clipboard-list"></i><p>Belum ada evaluasi yang dikerjakan siswa.</p></div>
+        <?php endif; ?>
     </div>
 </div>
 
@@ -585,58 +621,172 @@ include __DIR__ . '/includes/topbar_guru.php';
 
 <!-- ═══════════ TAB 7: WA BOT & AI ═══════════ -->
 <div id="tab-wabot" class="tab-panel">
-    <?php
-    $wa_provider = get_pengaturan('wa_ai_provider', 'groq');
-    $wa_model    = get_pengaturan('wa_ai_model', 'llama-3.1-8b-instant');
-    $wa_prompt   = get_pengaturan('wa_ai_prompt', '');
-    $wa_nomor    = get_pengaturan('wa_bot_nomor', '');
-    $wa_gateway  = get_pengaturan('wa_gateway', 'fonnte');
-    ?>
 
-    <div class="dgrid2">
-        <!-- Konfigurasi Gateway -->
-        <div class="card">
-            <div class="card-h" style="margin-bottom:16px"><h3><i class="icon-bot"></i> Konfigurasi WA Gateway</h3></div>
-            <form method="POST">
-                <input type="hidden" name="aksi" value="setting_wa_gateway">
-                <div class="fg">
-                    <label>Nomor WA Bot</label>
-                    <input type="text" name="wa_bot_nomor" value="<?= htmlspecialchars($wa_nomor) ?>" placeholder="628xxx">
-                </div>
-                <div class="fg">
-                    <label>Gateway</label>
-                    <select name="wa_gateway">
-                        <option value="fonnte"    <?= $wa_gateway === 'fonnte'    ? 'selected' : '' ?>>Fonnte</option>
-                        <option value="whacenter" <?= $wa_gateway === 'whacenter' ? 'selected' : '' ?>>Whacenter</option>
-                    </select>
-                </div>
-                <button type="submit" class="btn btn-3 btn-full"><i class="icon-save"></i> Simpan gateway</button>
-            </form>
+    <!-- STATUS & KONFIGURASI GATEWAY -->
+    <div class="card" style="margin-bottom:16px">
+        <div class="card-h" style="margin-bottom:16px"><h3><i class="icon-bot"></i> Status &amp; konfigurasi WA Bot</h3></div>
+
+        <!-- Status ringkas -->
+        <div class="stat-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:20px">
+            <div class="card" style="margin:0;border-left:4px solid var(--teal)">
+                <div class="stat-lbl">Nomor Bot</div>
+                <div style="font-weight:800;font-size:15px;margin-top:4px"><?= htmlspecialchars(get_pengaturan('wa_bot_nomor', '-')) ?></div>
+            </div>
+            <div class="card" style="margin:0;border-left:4px solid var(--biru)">
+                <div class="stat-lbl">Model AI Aktif</div>
+                <div style="font-weight:800;font-size:13px;margin-top:4px;word-break:break-all"><?= htmlspecialchars(get_pengaturan('wa_ai_model', 'llama-3.1-8b-instant')) ?></div>
+            </div>
+            <div class="card" style="margin:0;border-left:4px solid var(--amber)">
+                <div class="stat-lbl">Provider</div>
+                <div style="font-weight:800;font-size:15px;margin-top:4px"><?= strtoupper(htmlspecialchars(get_pengaturan('wa_ai_provider', 'groq'))) ?></div>
+            </div>
         </div>
 
-        <!-- Konfigurasi AI -->
-        <div class="card">
-            <div class="card-h" style="margin-bottom:16px"><h3><i class="icon-sparkles"></i> Konfigurasi AI</h3></div>
-            <form method="POST">
-                <input type="hidden" name="aksi" value="setting_ai">
-                <div class="fg">
-                    <label>Provider AI</label>
-                    <select name="wa_ai_provider">
-                        <option value="groq"   <?= $wa_provider === 'groq'   ? 'selected' : '' ?>>Groq</option>
-                        <option value="gemini" <?= $wa_provider === 'gemini' ? 'selected' : '' ?>>Gemini</option>
-                    </select>
-                </div>
-                <div class="fg">
-                    <label>Model</label>
-                    <input type="text" name="wa_ai_model" value="<?= htmlspecialchars($wa_model) ?>" placeholder="llama-3.1-8b-instant">
-                </div>
-                <div class="fg">
-                    <label>System prompt</label>
-                    <textarea name="wa_ai_prompt" rows="5" placeholder="Instruksi untuk AI bot…"><?= htmlspecialchars($wa_prompt) ?></textarea>
-                </div>
-                <button type="submit" class="btn btn-3 btn-full"><i class="icon-save"></i> Simpan konfigurasi AI</button>
-            </form>
+        <!-- Webhook URL -->
+        <div class="fg">
+            <label><i class="icon-link"></i> URL Webhook Fonnte</label>
+            <div style="display:flex;gap:8px;align-items:center">
+                <input type="text" id="webhook_url" readonly value="<?= APP_URL ?>/api/wa_webhook.php" style="flex:1;font-family:monospace;background:var(--kanvas)">
+                <button onclick="copyWebhook()" id="btn_copy_webhook" class="btn btn-1 btn-sm" style="white-space:nowrap"><i class="icon-copy"></i> Copy</button>
+            </div>
+            <div class="fhint" style="font-size:11px;color:var(--abu-muda);margin-top:4px">Paste URL ini di pengaturan Webhook Fonnte → Device → Edit</div>
         </div>
+
+        <!-- Form gateway -->
+        <form method="POST">
+            <input type="hidden" name="aksi" value="setting_wa_gateway">
+            <?php $gw_aktif = get_pengaturan('wa_gateway', 'fonnte'); ?>
+
+            <div class="fg">
+                <label>Gateway aktif</label>
+                <div style="display:flex;gap:10px;flex-wrap:wrap">
+                    <label class="dradio <?= $gw_aktif==='fonnte' ? 'on' : '' ?>">
+                        <input type="radio" name="wa_gateway" value="fonnte" <?= $gw_aktif==='fonnte' ? 'checked' : '' ?>> 📱 Fonnte
+                    </label>
+                    <label class="dradio <?= $gw_aktif==='whacenter' ? 'on' : '' ?>">
+                        <input type="radio" name="wa_gateway" value="whacenter" <?= $gw_aktif==='whacenter' ? 'checked' : '' ?>> 💬 Whacenter
+                    </label>
+                </div>
+            </div>
+
+            <div class="fg">
+                <label>Nomor Bot (format: 628xxx)</label>
+                <input type="text" name="wa_bot_nomor" value="<?= htmlspecialchars(get_pengaturan('wa_bot_nomor', '')) ?>" placeholder="6285111308087">
+                <div class="fhint" style="font-size:11px;color:var(--abu-muda);margin-top:3px">Nomor WA yang terhubung ke gateway aktif</div>
+            </div>
+
+            <!-- Info token Fonnte -->
+            <div class="dinfo" style="background:var(--biru-muda);border-color:var(--biru-200)">
+                <div style="font-size:12.5px;font-weight:700;color:var(--biru-tua);margin-bottom:8px">📱 Fonnte — Token Aktif</div>
+                <?php
+                $tok = defined('FONNTE_TOKEN') ? FONNTE_TOKEN : '';
+                $tok_sensor = $tok ? (substr($tok,0,4) . str_repeat('*', max(0,strlen($tok)-8)) . substr($tok,-4)) : '-';
+                ?>
+                <input type="text" readonly value="<?= htmlspecialchars($tok_sensor) ?>" style="font-family:monospace;background:#fff;font-size:12px;margin-bottom:6px">
+                <div style="font-size:11px;color:var(--abu-muda)">Tersensor. Ganti via SSH:</div>
+                <div style="display:flex;gap:8px;align-items:center;margin-top:4px">
+                    <code id="ssh_cmd" class="dcode">sudo sed -i "s|define('FONNTE_TOKEN', '.*');|define('FONNTE_TOKEN', 'TOKEN_BARU');|" /var/www/html/aibotlms/config/config.php</code>
+                    <button type="button" onclick="copySSH()" id="btn_copy_ssh" class="btn btn-2 btn-sm" style="white-space:nowrap"><i class="icon-copy"></i></button>
+                </div>
+            </div>
+
+            <!-- Info Device ID Whacenter -->
+            <div class="dinfo" style="background:var(--teal-muda);border-color:#99E6E5">
+                <div style="font-size:12.5px;font-weight:700;color:#0C807F;margin-bottom:8px">💬 Whacenter — Device ID Aktif</div>
+                <?php
+                $wc = defined('WHACENTER_DEVICE_ID') ? WHACENTER_DEVICE_ID : '';
+                $wc_sensor = $wc ? (substr($wc,0,8) . str_repeat('*', max(0,strlen($wc)-16)) . substr($wc,-8)) : '-';
+                ?>
+                <input type="text" readonly value="<?= htmlspecialchars($wc_sensor) ?>" style="font-family:monospace;background:#fff;font-size:12px;margin-bottom:6px">
+                <div style="font-size:11px;color:var(--abu-muda)">Tersensor. Ganti via SSH:</div>
+                <div style="display:flex;gap:8px;align-items:center;margin-top:4px">
+                    <code id="ssh_cmd_wc" class="dcode">sudo sed -i "s|define('WHACENTER_DEVICE_ID', '.*');|define('WHACENTER_DEVICE_ID', 'DEVICE_ID_BARU');|" /var/www/html/aibotlms/config/config.php</code>
+                    <button type="button" onclick="copySSHWC()" id="btn_copy_ssh_wc" class="btn btn-2 btn-sm" style="white-space:nowrap"><i class="icon-copy"></i></button>
+                </div>
+            </div>
+
+            <button type="submit" class="btn btn-3"><i class="icon-save"></i> Simpan konfigurasi gateway</button>
+        </form>
+    </div>
+
+    <!-- PENGATURAN MODEL AI -->
+    <div class="card">
+        <div class="card-h" style="margin-bottom:16px"><h3><i class="icon-sparkles"></i> Pilih model AI</h3></div>
+
+        <?php
+        $model_list = [
+            'groq' => [
+                'label' => 'Groq',
+                'models' => [
+                    ['id' => 'llama-3.1-8b-instant',                     'nama' => 'Llama 3.1 8B Instant',    'gratis' => true,  'desc' => 'Cepat, ringan, cocok untuk pertanyaan sederhana'],
+                    ['id' => 'llama-3.3-70b-versatile',                  'nama' => 'Llama 3.3 70B Versatile', 'gratis' => true,  'desc' => 'Lebih pintar, jawaban lebih detail'],
+                    ['id' => 'meta-llama/llama-4-scout-17b-16e-instruct','nama' => 'Llama 4 Scout 17B',       'gratis' => true,  'desc' => 'Model terbaru Meta, seimbang'],
+                    ['id' => 'qwen/qwen3-32b',                           'nama' => 'Qwen3 32B',               'gratis' => true,  'desc' => 'Model Alibaba, kuat untuk sains & teknik'],
+                    ['id' => 'groq/compound',                            'nama' => 'Groq Compound',           'gratis' => false, 'desc' => 'Model compound Groq, berbayar'],
+                ],
+            ],
+            'gemini' => [
+                'label' => 'Google Gemini',
+                'models' => [
+                    ['id' => 'gemini-2.0-flash',      'nama' => 'Gemini 2.0 Flash',      'gratis' => false, 'desc' => 'Google Gemini terbaru, berbayar'],
+                    ['id' => 'gemini-2.0-flash-lite', 'nama' => 'Gemini 2.0 Flash Lite', 'gratis' => false, 'desc' => 'Lebih hemat, cocok untuk volume tinggi'],
+                ],
+            ],
+        ];
+        $provider_aktif = get_pengaturan('wa_ai_provider', 'groq');
+        $model_aktif    = get_pengaturan('wa_ai_model', 'llama-3.1-8b-instant');
+        ?>
+
+        <form method="POST" id="form_ai_setting">
+            <input type="hidden" name="aksi" value="setting_ai">
+
+            <div class="fg">
+                <label>Provider AI</label>
+                <div style="display:flex;gap:10px;flex-wrap:wrap">
+                    <?php foreach ($model_list as $pkey => $pdata): ?>
+                    <label class="dradio <?= $provider_aktif === $pkey ? 'on' : '' ?>">
+                        <input type="radio" name="wa_ai_provider" value="<?= $pkey ?>" <?= $provider_aktif === $pkey ? 'checked' : '' ?> onchange="gantiProvider('<?= $pkey ?>')">
+                        <?= $pdata['label'] ?>
+                    </label>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+
+            <?php foreach ($model_list as $pkey => $pdata): ?>
+            <div id="models_<?= $pkey ?>" style="display:<?= $provider_aktif === $pkey ? 'block' : 'none' ?>;margin-bottom:14px">
+                <label style="font-size:12px;font-weight:700;color:var(--tinta);margin-bottom:8px;display:block">Model</label>
+                <div style="display:flex;flex-direction:column;gap:8px">
+                    <?php foreach ($pdata['models'] as $m): ?>
+                    <label class="dmodel <?= $model_aktif === $m['id'] ? 'on' : '' ?>">
+                        <input type="radio" name="wa_ai_model" value="<?= $m['id'] ?>" <?= $model_aktif === $m['id'] ? 'checked' : '' ?>>
+                        <div style="flex:1;min-width:0">
+                            <div style="font-size:13px;font-weight:700">
+                                <?= $m['nama'] ?>
+                                <?php if ($m['gratis']): ?>
+                                <span class="dtag-gratis">GRATIS</span>
+                                <?php else: ?>
+                                <span class="dtag-bayar">BERBAYAR</span>
+                                <?php endif; ?>
+                            </div>
+                            <div style="font-size:11px;color:var(--abu-muda);margin-top:2px"><?= $m['desc'] ?> · <code style="font-size:10px"><?= $m['id'] ?></code></div>
+                        </div>
+                        <button type="button" onclick="cekModel('<?= $pkey ?>', '<?= $m['id'] ?>', this)" class="btn btn-2 btn-sm" style="white-space:nowrap">🔍 Cek</button>
+                    </label>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+            <?php endforeach; ?>
+
+            <div class="fg">
+                <label>System prompt AI</label>
+                <textarea name="wa_ai_prompt" rows="5" style="font-family:monospace" placeholder="Kamu adalah asisten belajar…"><?= htmlspecialchars(get_pengaturan('wa_ai_prompt', '')) ?></textarea>
+                <div class="fhint" style="font-size:11px;color:var(--abu-muda);margin-top:4px">Kosongkan untuk menggunakan prompt default sistem.</div>
+            </div>
+
+            <button type="submit" class="btn btn-3"><i class="icon-save"></i> Simpan pengaturan AI</button>
+        </form>
+
+        <div id="hasil_cek_model" style="margin-top:16px;display:none"></div>
     </div>
 </div>
 
@@ -857,32 +1007,25 @@ function prosesImport(hasilDiv, total) {
     const batch = importData.slice(importOffset, importOffset + BATCH_SIZE);
     if (batch.length === 0) return;
 
-    const is_last = (importOffset + BATCH_SIZE) >= total;
-    const pctNow  = Math.round((importOffset / total) * 100);
-
+    const pctNow = Math.round((importOffset / total) * 100);
     hasilDiv.innerHTML = `<div class="dimsg info">⏳ Mengimpor… ${importOffset}/${total} (${pctNow}%)</div>
         <div class="bar" style="margin-top:8px"><i style="width:${pctNow}%"></i></div>`;
 
-    fetch('/api/import_siswa.php', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ aksi: 'batch', rows: batch, is_last: is_last })
-    })
+    const formData = new FormData();
+    formData.append('aksi', 'batch');
+    formData.append('rows', JSON.stringify(batch));
+
+    fetch('/api/import_siswa.php', { method: 'POST', body: formData })
     .then(r => r.json())
     .then(data => {
-        if (data.status === 'error') {
-            hasilDiv.innerHTML = `<div class="dimsg err">✗ ${data.pesan}</div>`;
-            return;
-        }
         importOffset += BATCH_SIZE;
         if (importOffset < total) {
             prosesImport(hasilDiv, total);
         } else {
-            let html = `<div class="dimsg ok">✓ Import selesai — <strong>${data.total_berhasil} siswa berhasil</strong>${data.total_gagal ? `, <strong>${data.total_gagal} dilewati</strong>` : ''}.</div>`;
+            hasilDiv.innerHTML = `<div class="dimsg ok">✓ Import selesai — <strong>${data.total_berhasil ?? total} siswa berhasil</strong>${data.total_gagal ? `, <strong>${data.total_gagal} dilewati</strong>` : ''}.</div>`;
             if (data.detail_gagal && data.detail_gagal.length) {
-                html += `<div class="dimsg warn" style="margin-top:8px"><strong>Detail dilewati:</strong><br>${data.detail_gagal.map(s=>'• '+s).join('<br>')}</div>`;
+                hasilDiv.innerHTML += `<div class="dimsg warn" style="margin-top:8px"><strong>Detail dilewati:</strong><br>${data.detail_gagal.map(s=>'• '+s).join('<br>')}</div>`;
             }
-            hasilDiv.innerHTML = html;
             setTimeout(() => location.reload(), 3000);
         }
     })
@@ -898,7 +1041,78 @@ function prosesImport(hasilDiv, total) {
 .dimsg.ok   { background:var(--teal-muda); color:var(--teal); border:1px solid #99E6E5; }
 .dimsg.err  { background:var(--coral-muda); color:var(--coral); border:1px solid #FCA5A5; }
 .dimsg.warn { background:var(--amber-muda); color:#B45309; border:1px solid #FCD34D; }
+
+.dradio { display:flex; align-items:center; gap:8px; padding:10px 18px; border:2px solid var(--garis); border-radius:var(--r-sm); cursor:pointer; font-size:13px; font-weight:700; color:var(--abu); }
+.dradio.on { border-color:var(--teal); color:var(--teal); background:var(--teal-muda); }
+.dradio input { accent-color:var(--teal); }
+.dmodel { display:flex; align-items:center; gap:12px; padding:12px 16px; border:2px solid var(--garis); border-radius:var(--r-sm); cursor:pointer; }
+.dmodel.on { border-color:var(--teal); background:var(--teal-muda); }
+.dmodel input { accent-color:var(--teal); flex-shrink:0; }
+.dinfo { margin:14px 0; padding:14px 16px; border-radius:var(--r-sm); border:1px solid; }
+.dcode { flex:1; padding:6px 10px; background:#1e1e2e; color:#a6e3a1; border-radius:6px; font-size:10px; display:block; overflow-x:auto; white-space:nowrap; }
+.dtag-gratis { background:var(--teal-muda); color:var(--teal); font-size:10px; padding:2px 8px; border-radius:20px; font-weight:700; margin-left:6px; }
+.dtag-bayar  { background:var(--coral-muda); color:var(--coral); font-size:10px; padding:2px 8px; border-radius:20px; font-weight:700; margin-left:6px; }
 </style>
+
+<script>
+// ── WA Bot: copy & cek model (identik fungsi asli) ───────────
+function copyWebhook() {
+    const url = document.getElementById('webhook_url').value;
+    navigator.clipboard.writeText(url).then(() => {
+        const btn = document.getElementById('btn_copy_webhook');
+        btn.innerHTML = '✅ Tersalin!';
+        setTimeout(() => { btn.innerHTML = '<i class="icon-copy"></i> Copy'; }, 2000);
+    });
+}
+function copySSH() {
+    const cmd = document.getElementById('ssh_cmd').textContent;
+    navigator.clipboard.writeText(cmd).then(() => {
+        const btn = document.getElementById('btn_copy_ssh');
+        btn.innerHTML = '✅';
+        setTimeout(() => { btn.innerHTML = '<i class="icon-copy"></i>'; }, 2000);
+    });
+}
+function copySSHWC() {
+    const cmd = document.getElementById('ssh_cmd_wc').textContent;
+    navigator.clipboard.writeText(cmd).then(() => {
+        const btn = document.getElementById('btn_copy_ssh_wc');
+        btn.innerHTML = '✅';
+        setTimeout(() => { btn.innerHTML = '<i class="icon-copy"></i>'; }, 2000);
+    });
+}
+function gantiProvider(provider) {
+    document.querySelectorAll('[id^="models_"]').forEach(el => el.style.display = 'none');
+    document.getElementById('models_' + provider).style.display = 'block';
+}
+function cekModel(provider, modelId, btn) {
+    const hasil = document.getElementById('hasil_cek_model');
+    hasil.style.display = 'block';
+    hasil.innerHTML = '<div class="dimsg info">🔍 Mengecek model <code>' + modelId + '</code>…</div>';
+    btn.disabled = true;
+    btn.textContent = '⏳';
+
+    fetch('/api/cek_model_ai.php', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({provider: provider, model: modelId})
+    })
+    .then(r => r.json())
+    .then(data => {
+        btn.disabled = false;
+        btn.textContent = '🔍 Cek';
+        if (data.status === 'ok') {
+            hasil.innerHTML = '<div class="dimsg ok">✅ Model <strong>' + modelId + '</strong> tersedia dan merespons normal.<br><small style="color:var(--abu-muda)">Respons: ' + data.preview + '</small></div>';
+        } else {
+            hasil.innerHTML = '<div class="dimsg err">❌ Model tidak tersedia: ' + data.pesan + '</div>';
+        }
+    })
+    .catch(() => {
+        btn.disabled = false;
+        btn.textContent = '🔍 Cek';
+        hasil.innerHTML = '<div class="dimsg err">❌ Gagal menghubungi server.</div>';
+    });
+}
+</script>
 
 </body>
 </html>
