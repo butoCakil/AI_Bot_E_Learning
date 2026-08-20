@@ -269,11 +269,14 @@ function kirim_soal_pretest(PDO $pdo, string $nomor, int $index): void {
     $msg  = "📝 *Soal {$no}/20* (Bagian {$bag})\n";
     $msg .= "━━━━━━━━━━━━━━━━━━━━\n\n";
     $msg .= ($soal['soal'] ?? '(soal tidak tersedia)') . "\n\n";
-    $msg .= "🅐 " . $soal['opsi']['A'] . "\n";
-    $msg .= "🅑 " . $soal['opsi']['B'] . "\n";
-    $msg .= "🅒 " . $soal['opsi']['C'] . "\n";
-    $msg .= "🅓 " . $soal['opsi']['D'] . "\n\n";
-    $msg .= "_Balas A, B, C, atau D_ 👆\n_Ketik *batal* untuk keluar (jawaban tidak disimpan)_";
+    $emoji_opsi = ['A' => '🅐', 'B' => '🅑', 'C' => '🅒', 'D' => '🅓'];
+    foreach ($soal['opsi'] as $huruf => $teks) {
+        $msg .= ($emoji_opsi[$huruf] ?? $huruf) . " " . $teks . "\n";
+    }
+    $msg .= "\n";
+    $huruf_valid = array_keys($soal['opsi']);
+    $akhir       = array_pop($huruf_valid);
+    $msg .= "_Balas " . implode(', ', $huruf_valid) . ", atau {$akhir}_ 👆\n_Ketik *batal* untuk keluar (jawaban tidak disimpan)_";
     kirim_wa($nomor, $msg);
 }
 
@@ -484,8 +487,20 @@ switch ($state) {
         $jawaban    = $context['jawaban'] ?? [];
         $jwb_upper  = strtoupper(trim($pesan));
 
-        if (!in_array($jwb_upper, ['A', 'B', 'C', 'D'])) {
-            kirim_wa($nomor, "Jawab dengan huruf *A*, *B*, *C*, atau *D* ya! 😊");
+        // Huruf valid mengikuti opsi soal yang sedang ditanyakan
+        // (soal pengetahuan A–D, soal SJT A–C)
+        require_once dirname(__DIR__) . '/config/soal_pretest.php';
+        $sp_val      = defined('SOAL_PENGETAHUAN') ? SOAL_PENGETAHUAN : [];
+        $ss_val      = defined('SOAL_SJT')         ? SOAL_SJT         : [];
+        $all_val     = array_merge($sp_val, $ss_val);
+        $huruf_valid = isset($all_val[$soal_index]['opsi'])
+                     ? array_keys($all_val[$soal_index]['opsi'])
+                     : ['A', 'B', 'C', 'D'];
+
+        if (!in_array($jwb_upper, $huruf_valid, true)) {
+            $hv    = $huruf_valid;
+            $akhir = array_pop($hv);
+            kirim_wa($nomor, "Jawab dengan huruf *" . implode('*, *', $hv) . "*, atau *{$akhir}* ya! 😊");
             break;
         }
 
@@ -493,10 +508,29 @@ switch ($state) {
         $soal_index++;
 
         if ($soal_index >= 20) {
-            $jawaban_json = json_encode($jawaban);
-            $cmd = PYTHON_BIN . ' ' . CLASSIFY_SCRIPT . ' ' . escapeshellarg($user['id']) . ' ' . escapeshellarg($jawaban_json);
-            shell_exec($cmd . ' > /dev/null 2>&1 &');
-            kirim_wa($nomor, "🎉 *Pre-Test Selesai!*\n\nJawaban kamu sudah diterima! 🙌\nHasil profil belajarmu sedang diproses...\n\nTunggu beberapa detik, lalu ketik *menu*. 😊");
+            // Pisahkan: 12 jawaban pengetahuan + 8 jawaban SJT
+            $jwb_pengetahuan = array_slice($jawaban, 0, 12);
+            $jwb_sjt         = array_slice($jawaban, 12, 8);
+
+            $skor_pt     = hitung_skor($jwb_pengetahuan, KUNCI_JAWABAN);
+            $klasifikasi = classify_siswa($jwb_sjt, $skor_pt);
+
+            if ($klasifikasi['status'] !== 'ok') {
+                error_log('Pretest WA klasifikasi gagal (user ' . $user['id'] . '): ' . $klasifikasi['message']);
+                kirim_wa($nomor, "⚠️ Maaf, sistem gagal memproses hasil pre-test kamu.\n\nCoba lagi lewat web ya:\n🔗 " . APP_URL . "/pretest.php\n\n_atau hubungi gurumu._");
+                hapus_wa_session($pdo, $nomor);
+                break;
+            }
+
+            $pretest_id = simpan_pretest($user['id'], $jwb_pengetahuan, $jwb_sjt, $skor_pt, $klasifikasi);
+            log_aktivitas($user['id'], 'pretest', null, null, [
+                'pretest_id'      => $pretest_id,
+                'skor'            => $skor_pt,
+                'profil_gabungan' => $klasifikasi['profil_gabungan'],
+                'sumber'          => 'wa',
+            ]);
+
+            kirim_wa($nomor, "🎉 *Pre-Test Selesai!*\n\nSkor pengetahuan: *{$skor_pt}/12*\nProfil belajarmu sudah diperbarui! 🙌\n\nKetik *menu* untuk melihat hasilnya. 😊");
             hapus_wa_session($pdo, $nomor);
         } else {
             set_wa_session($pdo, $nomor, 'pretest', ['soal_index' => $soal_index, 'jawaban' => $jawaban], $user['id']);
