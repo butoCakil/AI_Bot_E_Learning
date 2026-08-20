@@ -2,6 +2,17 @@
 require_once '../config/config.php';
 require_once '../includes/functions.php';
 
+// ── Validasi token ────────────────────────────────────────────
+// Endpoint ini terbuka di internet, jadi wajib diproteksi. Token disimpan di
+// tabel `pengaturan` dengan kunci 'wa_webhook_token' dan disertakan sebagai
+// ?token=... pada URL oleh elearning-bridge.
+$expected_token = get_pengaturan('wa_webhook_token', '');
+$given_token    = $_GET['token'] ?? '';
+if ($expected_token === '' || !hash_equals($expected_token, $given_token)) {
+    http_response_code(401);
+    exit('unauthorized');
+}
+
 $raw  = file_get_contents('php://input');
 $data = json_decode($raw, true);
 
@@ -40,6 +51,32 @@ $pdo = db();
 // ── Fungsi kirim WA (dual gateway) ────────────────────────────
 function kirim_wa(string $nomor, string $pesan): void {
     $gateway = get_pengaturan('wa_gateway', 'fonnte');
+
+    // ── WA Gateway sendiri (via elearning-bridge di X200MA lewat Tailscale) ──
+    if ($gateway === 'wagateway') {
+        $url   = get_pengaturan('wa_gateway_send_url', '');
+        $token = get_pengaturan('wa_gateway_send_token', '');
+        if ($url === '' || $token === '') {
+            error_log('[kirim_wa] wa_gateway_send_url/token belum diset');
+            return;
+        }
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST           => true,
+            CURLOPT_POSTFIELDS     => json_encode(['target' => $nomor, 'message' => $pesan]),
+            CURLOPT_HTTPHEADER     => [
+                'Content-Type: application/json',
+                'Authorization: Bearer ' . $token,
+            ],
+            CURLOPT_TIMEOUT        => 15,
+        ]);
+        $resp = curl_exec($ch);
+        if ($resp === false) error_log('[kirim_wa] gateway CURL: ' . curl_error($ch));
+        curl_close($ch);
+        return;
+    }
+
     if ($gateway === 'whacenter') {
         $ch = curl_init(WHACENTER_URL);
         curl_setopt_array($ch, [
@@ -96,14 +133,32 @@ function tanya_ai(string $pertanyaan, array $konteks, PDO $pdo): string {
     $model    = get_pengaturan('wa_ai_model',    'llama-3.1-8b-instant');
     $custom   = get_pengaturan('wa_ai_prompt',   '');
 
-    $system = $custom ?: (
+    // Prompt dasar dari pengaturan (bisa diedit guru), ATAU bawaan bila kosong.
+    $dasar = $custom ?: (
         "Kamu adalah asisten belajar AdaptLearn PRE untuk mata pelajaran Penerapan Rangkaian Elektronika (PRE) di SMK. " .
-        "Siswa bernama {$konteks['nama']}, kelas {$konteks['kelas']}, " .
-        "profil belajar: {$konteks['profil']}, level: {$konteks['level']}. " .
         "Jawab dengan bahasa formal tapi santai, mudah dipahami siswa SMK. " .
-        "Fokus pada materi elektronika (dioda, transistor, catu daya). " .
+        "Fokus pada materi teknik elektronika. " .
         "Jawaban maksimal 3 paragraf pendek. Gunakan emoji secukupnya."
     );
+
+    // Konteks siswa SELALU disertakan, terlepas dari prompt mana yang dipakai.
+    // Sebelumnya konteks ini hilang saat pengaturan wa_ai_prompt terisi, sehingga
+    // jawaban tidak lagi menyesuaikan profil & level siswa.
+    $system = $dasar . "\n\nDATA SISWA YANG SEDANG BERTANYA:\n"
+        . "- Nama: "  . ($konteks['nama']   ?? '-') . "\n"
+        . "- Kelas: " . ($konteks['kelas']  ?? '-') . "\n"
+        . "- Profil belajar: " . ($konteks['profil'] ?? '-') . "\n"
+        . "- Level kemampuan: " . ($konteks['level'] ?? '-') . "\n"
+        . "Sapa siswa dengan namanya, dan sesuaikan kedalaman penjelasan dengan levelnya.";
+
+    // Materi kelas sebagai acuan utama, bila tersedia.
+    if (!empty($konteks['materi'])) {
+        $system .= "\n\n=== MATERI KELAS UNTUK TOPIK: " . ($konteks['topik'] ?? '-') . " ===\n"
+            . $konteks['materi']
+            . "\n=== AKHIR MATERI ===\n"
+            . "Jadikan materi di atas acuan utama. Boleh menambah wawasan di luar materi, "
+            . "tapi tandai bahwa itu tambahan.";
+    }
 
     if ($provider === 'groq') {
         $payload = json_encode([
@@ -112,7 +167,7 @@ function tanya_ai(string $pertanyaan, array $konteks, PDO $pdo): string {
                 ['role' => 'system', 'content' => $system],
                 ['role' => 'user',   'content' => $pertanyaan],
             ],
-            'max_tokens'  => 400,
+            'max_tokens'  => 900,
             'temperature' => 0.7,
         ]);
         $ch = curl_init(GROQ_API_URL);
@@ -380,8 +435,44 @@ switch ($state) {
             'profil' => $label_profil[$user['profil_learning']] ?? 'Umum',
             'level'  => $label_level[$user['level_kemampuan']] ?? 'Umum',
         ];
+
+        // Sertakan materi topik yang sedang dipelajari siswa, supaya jawaban AI
+        // berpijak pada bahan ajar kelas — bukan hanya pengetahuan umum model.
+        // Tipe 'evaluasi' dan 'tantangan' SENGAJA dikecualikan karena berisi soal;
+        // kalau ikut dikirim, AI bisa membocorkan jawabannya.
+        $tq = $pdo->prepare("
+            SELECT a.topik FROM activity_log a
+            WHERE a.user_id = ? AND a.tipe = 'buka_materi' AND a.topik IS NOT NULL
+            ORDER BY a.id DESC LIMIT 1
+        ");
+        $tq->execute([$user['id']]);
+        $topik_aktif = $tq->fetchColumn();
+
+        if ($topik_aktif) {
+            $mq = $pdo->prepare("
+                SELECT judul, tipe, isi FROM content
+                WHERE topik = ? AND aktif = 1 AND tipe IN ('teori','langkah','jobsheet')
+                ORDER BY urutan_default ASC, id ASC
+            ");
+            $mq->execute([$topik_aktif]);
+            $bagian = [];
+            $total  = 0;
+            foreach ($mq->fetchAll() as $m) {
+                $teks = trim(strip_tags($m['isi'] ?? ''));
+                if ($teks === '') continue;
+                // Batasi total agar prompt tidak membengkak (materi Anda ~1-2 rb char/bagian)
+                if ($total + strlen($teks) > 12000) break;
+                $bagian[] = "### [{$m['tipe']}] {$m['judul']}\n{$teks}";
+                $total += strlen($teks);
+            }
+            if ($bagian) {
+                $konteks['topik']  = $topik_aktif;
+                $konteks['materi'] = implode("\n\n", $bagian);
+            }
+        }
+
         $jawaban = tanya_ai($pesan, $konteks, $pdo);
-        kirim_wa($nomor, "🤖 *Jawaban AI:*\n\n{$jawaban}\n\n_Punya pertanyaan lain? Langsung ketik! Atau ketik *batal* untuk kembali._ 😊");
+        kirim_wa($nomor, "🤖 *Jawaban AI:*\n\n{$jawaban}\n\n_⚠️ Jawaban AI bisa keliru — verifikasi dengan guru atau buku._\n_Punya pertanyaan lain? Langsung ketik! Atau ketik *batal* untuk kembali._ 😊");
         break;
 
     case 'pretest':

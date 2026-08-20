@@ -1,4 +1,11 @@
-<?php $judul = 'Panduan Penggunaan AdaptLearn PRE'; ?>
+<?php
+require_once 'config/config.php';
+require_once 'includes/functions.php';
+$judul = 'Panduan Penggunaan AdaptLearn PRE';
+// Nomor bot dibaca dari pengaturan, bukan ditulis manual — kalau nomor berubah,
+// seluruh tautan di halaman ini ikut benar tanpa disunting.
+$botNomor = preg_replace('/\D/', '', get_pengaturan('wa_bot_nomor', ''));
+?>
 <!DOCTYPE html>
 <html lang="id">
 <head>
@@ -283,6 +290,19 @@ body{font-family:'Segoe UI',sans-serif;background:var(--bg);color:var(--text);fo
 <div class="section" id="wa-registrasi">
   <div class="section-header"><div class="section-icon blue">📱</div><div><div class="section-title">3.1 Registrasi WA Bot</div><div class="section-subtitle">Hubungkan nomor WA-mu ke akun AdaptLearn PRE</div></div></div>
   <div class="section-body">
+    <?php if ($botNomor): ?>
+    <div style="background:#e8f5e9;border:1px solid #a5d6a7;border-radius:10px;padding:16px;margin-bottom:16px">
+      <div style="font-weight:700;margin-bottom:6px">Langkah 1 — buka chat bot</div>
+      <div style="font-size:20px;font-weight:800;margin-bottom:10px"><?= htmlspecialchars($botNomor) ?></div>
+      <a href="https://wa.me/<?= $botNomor ?>?text=halo" target="_blank" rel="noopener"
+        style="display:inline-block;padding:10px 20px;background:#25D366;color:#fff;border-radius:8px;text-decoration:none;font-weight:700;font-size:14px">
+        💬 Buka chat &amp; kirim "halo"
+      </a>
+      <div style="font-size:13px;color:#555;margin-top:10px">
+        Kirim pesan ini dulu, baru lanjut ke langkah berikutnya.
+      </div>
+    </div>
+    <?php endif; ?>
     <div class="info-box yellow"><span>📌</span><span>Registrasi hanya diperlukan jika nomor WA-mu belum terdaftar di sistem.</span></div>
     <p style="margin-bottom:16px">Kirim pesan ke nomor bot dengan format:</p>
     <div style="background:#f9fbfd;border-radius:10px;padding:16px;border:1px solid var(--border)">
@@ -294,11 +314,22 @@ body{font-family:'Segoe UI',sans-serif;background:var(--bg);color:var(--text);fo
     </div>
   </div>
 </div>
-
+ 
 <!-- WA BOT: MENU -->
 <div class="section" id="wa-menu">
   <div class="section-header"><div class="section-icon blue">📋</div><div><div class="section-title">3.2 Menu WA Bot</div><div class="section-subtitle">Fitur-fitur yang tersedia melalui WhatsApp</div></div></div>
   <div class="section-body">
+    <?php $botNomor = preg_replace('/\D/', '', get_pengaturan('wa_bot_nomor', '')); ?>
+    <?php if ($botNomor): ?>
+    <div style="background:#e8f5e9;border:1px solid #a5d6a7;border-radius:10px;padding:16px;margin-bottom:16px">
+      <div style="font-weight:700;margin-bottom:6px">Nomor bot AdaptLearn PRE</div>
+      <div style="font-size:20px;font-weight:800;letter-spacing:.5px;margin-bottom:10px"><?= htmlspecialchars($botNomor) ?></div>
+      <a href="https://wa.me/<?= $botNomor ?>?text=menu" target="_blank" rel="noopener"
+         style="display:inline-block;padding:10px 20px;background:#25D366;color:#fff;border-radius:8px;text-decoration:none;font-weight:700;font-size:14px">
+        💬 Mulai chat sekarang 
+      </a>
+    </div>
+    <?php endif; ?>
     <p style="margin-bottom:16px">Kirim <strong>"halo"</strong> atau <strong>"menu"</strong> untuk membuka menu utama.</p>
     <div style="background:#f9fbfd;border-radius:10px;padding:16px;border:1px solid var(--border);margin-bottom:20px">
       <div class="wa-reply">Halo <strong>Ahmad</strong>! 👋 Selamat datang di <strong>AdaptLearn PRE</strong>.<br><br>📚 <strong>MENU UTAMA</strong><br>━━━━━━━━━━━━━━━━━━━━<br>1️⃣ Lanjut Belajar<br>2️⃣ Cek Progress<br>3️⃣ Tanya Materi (AI)<br>4️⃣ Ulangi Pre-Test<br>━━━━━━━━━━━━━━━━━━━━<br>Balas dengan angka pilihanmu ya! 😊</div>

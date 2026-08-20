@@ -666,6 +666,9 @@ include __DIR__ . '/includes/topbar_guru.php';
                     <label class="dradio <?= $gw_aktif==='whacenter' ? 'on' : '' ?>">
                         <input type="radio" name="wa_gateway" value="whacenter" <?= $gw_aktif==='whacenter' ? 'checked' : '' ?>> 💬 Whacenter
                     </label>
+                    <label class="dradio <?= $gw_aktif==='wagateway' ? 'on' : '' ?>">
+                        <input type="radio" name="wa_gateway" value="wagateway" <?= $gw_aktif==='wagateway' ? 'checked' : '' ?>> 🖥️ benGateway
+                    </label>
                 </div>
             </div>
 
@@ -682,7 +685,7 @@ include __DIR__ . '/includes/topbar_guru.php';
                 $tok = defined('FONNTE_TOKEN') ? FONNTE_TOKEN : '';
                 $tok_sensor = $tok ? (substr($tok,0,4) . str_repeat('*', max(0,strlen($tok)-8)) . substr($tok,-4)) : '-';
                 ?>
-                <input type="text" readonly value="<?= htmlspecialchars($tok_sensor) ?>" style="font-family:monospace;background:#fff;font-size:12px;margin-bottom:6px">
+                <div class="fg" style="margin-bottom:6px"><input type="text" value="<?= htmlspecialchars($tok_sensor) ?>" style="font-family:monospace"></div>
                 <div style="font-size:11px;color:var(--abu-muda)">Tersensor. Ganti via SSH:</div>
                 <div style="display:flex;gap:8px;align-items:center;margin-top:4px">
                     <code id="ssh_cmd" class="dcode">sudo sed -i "s|define('FONNTE_TOKEN', '.*');|define('FONNTE_TOKEN', 'TOKEN_BARU');|" /var/www/html/aibotlms/config/config.php</code>
@@ -697,11 +700,34 @@ include __DIR__ . '/includes/topbar_guru.php';
                 $wc = defined('WHACENTER_DEVICE_ID') ? WHACENTER_DEVICE_ID : '';
                 $wc_sensor = $wc ? (substr($wc,0,8) . str_repeat('*', max(0,strlen($wc)-16)) . substr($wc,-8)) : '-';
                 ?>
-                <input type="text" readonly value="<?= htmlspecialchars($wc_sensor) ?>" style="font-family:monospace;background:#fff;font-size:12px;margin-bottom:6px">
+                <div class="fg" style="margin-bottom:6px"><input type="text" value="<?= htmlspecialchars($wc_sensor) ?>" style="font-family:monospace"></div>
                 <div style="font-size:11px;color:var(--abu-muda)">Tersensor. Ganti via SSH:</div>
                 <div style="display:flex;gap:8px;align-items:center;margin-top:4px">
                     <code id="ssh_cmd_wc" class="dcode">sudo sed -i "s|define('WHACENTER_DEVICE_ID', '.*');|define('WHACENTER_DEVICE_ID', 'DEVICE_ID_BARU');|" /var/www/html/aibotlms/config/config.php</code>
                     <button type="button" onclick="copySSHWC()" id="btn_copy_ssh_wc" class="btn btn-2 btn-sm" style="white-space:nowrap"><i class="icon-copy"></i></button>
+                </div>
+            
+            </div>
+            <!-- Info benGateway (X200MA) -->
+            <div class="dinfo" style="background:#F3F0FF;border-color:#D6CCFF">
+                <div style="font-size:12.5px;font-weight:700;color:#5B3FD9;margin-bottom:8px">🖥️ benGateway — Konfigurasi Aktif</div>
+                <?php
+                $bg_url = get_pengaturan('wa_gateway_send_url', '');
+                $bg_tok = get_pengaturan('wa_gateway_send_token', '');
+                $bg_tok_sensor = $bg_tok ? (substr($bg_tok,0,6) . str_repeat('*', max(0,strlen($bg_tok)-12)) . substr($bg_tok,-6)) : '-';
+                ?>
+                <div class="fg" style="margin-bottom:10px">
+                    <label style="font-weight:400;color:var(--abu-muda);font-size:11px">URL</label>
+                    <input type="text" value="<?= htmlspecialchars($bg_url ?: '(belum diatur)') ?>" style="font-family:monospace">
+                </div>
+                <div class="fg" style="margin-bottom:6px">
+                    <label style="font-weight:400;color:var(--abu-muda);font-size:11px">Token</label>
+                    <input type="text" value="<?= htmlspecialchars($bg_tok_sensor) ?>" style="font-family:monospace">
+                </div>
+                <div style="font-size:11px;color:var(--abu-muda)">Gateway internal pribadi (ben-X200MA). URL & token tersimpan di tabel <code>pengaturan</code> — <b>bukan</b> di config.php, jadi tidak bisa diubah lewat perintah <code>sed</code> seperti dua gateway di atas. Ganti lewat SSH:</div>
+                <div style="display:flex;gap:8px;align-items:center;margin-top:4px">
+                    <code id="ssh_cmd_bg" class="dcode">mysql -u elearning_user -p elearning_adaptif -e "UPDATE pengaturan SET nilai='TOKEN_BARU' WHERE kunci='wa_gateway_send_token';"</code>
+                    <button type="button" onclick="copySSHBG()" id="btn_copy_ssh_bg" class="btn btn-2 btn-sm" style="white-space:nowrap"><i class="icon-copy"></i></button>
                 </div>
             </div>
 
@@ -1074,7 +1100,22 @@ function copySSH() {
 }
 function copySSHWC() {
     const cmd = document.getElementById('ssh_cmd_wc').textContent;
+    navigator.function copySSHWC() {
+    const cmd = document.getElementById('ssh_cmd_wc').textContent;
     navigator.clipboard.writeText(cmd).then(() => {
+        const btn = document.getElementById('btn_copy_ssh_wc');
+        btn.innerHTML = '✅';
+        setTimeout(() => { btn.innerHTML = '<i class="icon-copy"></i>'; }, 2000);
+    });
+}
+function copySSHBG() {
+    const cmd = document.getElementById('ssh_cmd_bg').textContent;
+    navigator.clipboard.writeText(cmd).then(() => {
+        const btn = document.getElementById('btn_copy_ssh_bg');
+        btn.innerHTML = '✅';
+        setTimeout(() => { btn.innerHTML = '<i class="icon-copy"></i>'; }, 2000);
+    });
+}clipboard.writeText(cmd).then(() => {
         const btn = document.getElementById('btn_copy_ssh_wc');
         btn.innerHTML = '✅';
         setTimeout(() => { btn.innerHTML = '<i class="icon-copy"></i>'; }, 2000);

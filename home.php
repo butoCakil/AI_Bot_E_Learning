@@ -244,7 +244,24 @@ include __DIR__ . '/includes/topbar_siswa.php';
                 </div>
             <?php endforeach; ?>
         </div>
+    </div> 
+
+    <!-- BELAJAR LEWAT WHATSAPP -->
+    <?php $botNomor = preg_replace('/\D/', '', get_pengaturan('wa_bot_nomor', '')); ?>
+    <?php if ($botNomor): ?>
+    <div class="card">
+        <div class="card-h">
+            <h3><i class="icon-signal"></i> Belajar lewat WhatsApp</h3>
+        </div>
+        <p class="card-sub">Tanya materi ke AI, cek progress, atau lanjut belajar — langsung dari chat.</p>
+        <a class="btn btn-2" href="https://wa.me/<?= $botNomor ?>?text=menu" target="_blank" rel="noopener">
+            Buka chat bot <i class="icon-arrow-right"></i>
+        </a>
+        <p class="card-sub" style="margin-top:10px">
+            Nomor bot: <strong><?= htmlspecialchars($botNomor) ?></strong>
+        </p>
     </div>
+    <?php endif; ?>
 
     <!-- ALUR BELAJAR -->
     <div class="card">
