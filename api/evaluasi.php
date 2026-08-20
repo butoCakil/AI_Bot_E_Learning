@@ -119,5 +119,11 @@ log_aktivitas($user_id, 'jawab_quiz', $content_id, $topik, [
     'profil_gabungan' => $profil_gabungan,
 ]);
 
+log_aktivitas($user_id, 'selesai_materi', $content_id, $topik);
+
+// Konten evaluasi tidak melewati /api/selesai_materi.php,
+// jadi tandai selesai di sini agar ikut terhitung progress.
+log_aktivitas($user_id, 'selesai_materi', $content_id, $topik);
+
 header('Location: /hasil_evaluasi.php?konten=' . $content_id);
 exit;

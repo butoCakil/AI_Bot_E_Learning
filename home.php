@@ -35,7 +35,9 @@ $ikon_topik = [
 ];
 
 // ── Progress per topik ───────────────────────────────────────
-$topik_list     = get_topik_list();
+$topik_list     = array_filter(get_topik_list(), function ($slug) {
+    return empty(get_sub_topik($slug));   // buang parent yang punya sub-topik
+}, ARRAY_FILTER_USE_KEY);
 $progress_topik = [];
 $total_semua    = 0;
 $selesai_semua  = 0;

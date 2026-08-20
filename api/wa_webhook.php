@@ -313,7 +313,12 @@ if (preg_match('/^daftar\s+(\S+)\s+(\S+)$/i', $pesan, $m)) {
 $stmt = $pdo->prepare("
     SELECT u.*, p.profil_learning, p.level_kemampuan, p.profil_gabungan, p.skor_pengetahuan
     FROM users u
-    LEFT JOIN pre_test_results p ON p.user_id = u.id
+    LEFT JOIN pre_test_results p
+           ON p.id = (
+               SELECT p2.id FROM pre_test_results p2
+               WHERE p2.user_id = u.id
+               ORDER BY p2.id DESC LIMIT 1
+           )
     WHERE u.nomor_wa = ? AND u.role = 'siswa'
 ");
 $stmt->execute([$nomor]);
@@ -383,23 +388,22 @@ switch ($state) {
             }
 
         } elseif ($pesan === '2' && $sudah_pretest) {
-            $topik_list = [
-                'dioda'                  => 'Dioda',
-                'pengertian-transistor'  => 'Pengertian Transistor',
-                'pengukuran-transistor'  => 'Pengukuran Transistor',
-                'catu-daya'              => 'Catu Daya',
-            ];
+            $topik_list = get_topik_list();
             $msg = "📊 *Progress Belajarmu*\n━━━━━━━━━━━━━━━━━━━━\n";
             foreach ($topik_list as $slug => $nama_topik) {
-                $t = $pdo->prepare("SELECT COUNT(*) FROM content WHERE topik = ?");
-                $t->execute([$slug]);
-                $total = (int)$t->fetchColumn();
+                // Lewati topik parent yang punya sub-topik (tidak punya konten sendiri)
+                if (!empty(get_sub_topik($slug))) continue;
+
+                $t = $pdo->prepare("SELECT urutan_content FROM adaptation_rules WHERE profil_gabungan = ? AND topik = ?");
+                $t->execute([$user['profil_gabungan'], $slug]);
+                $r = $t->fetch();
+                $total = $r ? count(array_unique(json_decode($r['urutan_content'], true))) : 0;
 
                 $b = $pdo->prepare("SELECT COUNT(DISTINCT content_id) FROM activity_log WHERE user_id = ? AND topik = ? AND tipe = 'selesai_materi'");
                 $b->execute([$user['id'], $slug]);
                 $dibuka = (int)$b->fetchColumn();
 
-                $pct = $total > 0 ? round(($dibuka / $total) * 100) : 0;
+                $pct = $total > 0 ? min(100, (int)round(($dibuka / $total) * 100)) : 0;
                 $bar = str_repeat('█', (int)($pct / 10)) . str_repeat('░', 10 - (int)($pct / 10));
                 $msg .= "\n📚 *{$nama_topik}*\n{$bar} {$pct}%\n";
             }

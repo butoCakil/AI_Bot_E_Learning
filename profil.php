@@ -55,7 +55,9 @@ $stmt->execute([$user_id]);
 $progress_topik = array_column($stmt->fetchAll(), 'dibuka', 'topik');
 
 // Total konten per topik dari adaptation_rules
-$topik_label        = get_topik_list();
+$topik_label        = array_filter(get_topik_list(), function ($slug) {
+    return empty(get_sub_topik($slug));   // buang parent yang punya sub-topik
+}, ARRAY_FILTER_USE_KEY);
 $total_konten_topik = [];
 if ($profil) {
     foreach (array_keys($topik_label) as $topik) {
