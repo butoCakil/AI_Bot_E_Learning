@@ -1,1 +1,5 @@
 config/config.php
+uploads/jobsheet/*
+uploads/konten/*
+!uploads/jobsheet/.gitkeep
+!uploads/konten/.gitkeep
