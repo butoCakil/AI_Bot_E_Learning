@@ -65,10 +65,9 @@ foreach ($topik_list as $slug => $nama_topik) {
         // Jumlah soal (untuk evaluasi yang belum dikerjakan)
         $jml_soal = count(json_decode($ev['isi'], true) ?? []);
 
-        // Kesiapan: berapa materi di topik ini sudah diselesaikan
-        $stmt_s = $pdo->prepare("SELECT COUNT(DISTINCT content_id) FROM activity_log WHERE user_id = ? AND tipe = 'selesai_materi' AND topik = ?");
-        $stmt_s->execute([$user_id, $slug]);
-        $materi_selesai = (int) $stmt_s->fetchColumn();
+        // Kesiapan: prasyarat evaluasi menurut urutan profil siswa
+        $prasyarat = cek_prasyarat_evaluasi($user_id, $profil['profil_gabungan'], $slug, (int) $ev['id']);
+        $materi_selesai = $prasyarat['selesai'];
 
         $daftar[] = [
             'content_id'     => (int) $ev['id'],
@@ -78,6 +77,7 @@ foreach ($topik_list as $slug => $nama_topik) {
             'jml_soal'       => $jml_soal,
             'hasil'          => $hasil ?: null,
             'materi_selesai' => $materi_selesai,
+            'prasyarat'      => $prasyarat,
         ];
 
         $jml_total++;
@@ -196,9 +196,19 @@ include __DIR__ . '/includes/topbar_siswa.php';
                                 <i class="icon-refresh-cw"></i> Kerjakan ulang
                             </a>
                         <?php else: ?>
-                            <a href="materi.php?topik=<?= urlencode($d['topik_slug']) ?>&konten=<?= $d['content_id'] ?>" class="btn btn-1 btn-sm">
-                                Kerjakan sekarang <i class="icon-arrow-right"></i>
-                            </a>
+                            <?php if ($d['prasyarat']['boleh']): ?>
+                                <a href="materi.php?topik=<?= urlencode($d['topik_slug']) ?>&konten=<?= $d['content_id'] ?>" class="btn btn-1 btn-sm">
+                                    Kerjakan sekarang <i class="icon-arrow-right"></i>
+                                </a>
+                            <?php else: ?>
+                                <span class="btn btn-2 btn-sm" style="opacity:.55;cursor:not-allowed" title="Selesaikan materi prasyarat dulu">
+                                    <i class="icon-lock"></i> Terkunci
+                                </span>
+                                <a href="materi.php?topik=<?= urlencode($d['topik_slug']) ?>" class="btn btn-1 btn-sm">
+                                    <i class="icon-book-open"></i> Lanjut materi
+                                    (<?= $d['prasyarat']['selesai'] ?>/<?= $d['prasyarat']['total'] ?>)
+                                </a>
+                            <?php endif; ?>
                         <?php endif; ?>
                     </div>
                 </div>

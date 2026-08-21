@@ -39,7 +39,9 @@ $ikon_tipe = [
 ];
 
 // Topik dari database
-$topik_list = get_topik_list();
+$topik_list = array_filter(get_topik_list(), function ($slug) {
+    return empty(get_sub_topik($slug));   // buang parent yang punya sub-topik
+}, ARRAY_FILTER_USE_KEY);
 
 // Topik aktif
 $topik_aktif = $_GET['topik'] ?? array_key_first($topik_list);
@@ -86,6 +88,22 @@ foreach ($konten_list as $k) {
     if ($k['id'] == $konten_id_aktif) {
         $konten_aktif = $k;
         break;
+    }
+}
+
+// Gate sekuensial: konten hanya bisa dibuka bila semua konten sebelumnya sudah selesai
+// (konten yang sudah pernah diselesaikan tetap boleh dibuka ulang)
+if ($konten_aktif) {
+    $prasyarat_ev = cek_prasyarat_evaluasi(
+        $user_id, $profil_gabungan, $topik_aktif, (int) $konten_id_aktif
+    );
+    if (!$prasyarat_ev['boleh']) {
+        $konten_tujuan = (int) $prasyarat_ev['kurang'][0];
+        $_SESSION['flash_gate'] = 'Selesaikan materi sebelumnya dulu ('
+            . $prasyarat_ev['selesai'] . '/' . $prasyarat_ev['total']
+            . ') sebelum membuka materi ini.';
+        header('Location: materi.php?topik=' . urlencode($topik_aktif) . '&konten=' . $konten_tujuan);
+        exit;
     }
 }
 
@@ -169,10 +187,22 @@ $topik_keys = array_keys($topik_list);
 $topik_idx  = array_search($topik_aktif, $topik_keys);
 $next_topik = $topik_keys[$topik_idx + 1] ?? null;
 
+// DEBUG sementara
+error_log('DEBUG next: aktif=' . $topik_aktif . ' idx=' . var_export($topik_idx, true) . ' next=' . var_export($next_topik, true));
+
 $page_title   = ($konten_aktif['judul'] ?? 'Materi') . ' — AdaptLearn PRE';
 $topbar_aktif = 'materi';
 include __DIR__ . '/includes/topbar_siswa.php';
 ?>
+
+<?php if (!empty($_SESSION['flash_gate'])): ?>
+    <div class="wrap" style="padding-top:12px">
+        <div class="alert warn">
+            <i class="icon-lock"></i> <?= htmlspecialchars($_SESSION['flash_gate']) ?>
+        </div>
+    </div>
+    <?php unset($_SESSION['flash_gate']); ?>
+<?php endif; ?>
 
 <div class="crumb">
     <a href="home.php">Beranda</a>
@@ -231,17 +261,29 @@ include __DIR__ . '/includes/topbar_siswa.php';
                     $sudah = $k['tipe'] === 'evaluasi'
                         ? in_array($k['id'], $evaluasi_selesai)
                         : in_array($k['id'], $konten_dibuka);
+                    $boleh = cek_prasyarat_evaluasi(
+                        $user_id, $profil_gabungan, $topik_aktif, (int) $k['id']
+                    )['boleh'];
                     ?>
-                    <a href="materi.php?topik=<?= urlencode($topik_aktif) ?>&konten=<?= $k['id'] ?>"
-                       class="<?= $k['id'] == $konten_id_aktif ? 'on' : '' ?>">
-                        <span class="tipe tipe-<?= $k['tipe'] ?>"><?= strtoupper($k['tipe']) ?></span>
-                        <span style="flex:1;min-width:0"><?= htmlspecialchars($k['judul']) ?></span>
-                        <?php if ($sudah): ?>
-                            <i class="icon-circle-check tick" title="Sudah selesai"></i>
-                        <?php elseif ($k['wajib']): ?>
-                            <i class="icon-asterisk wajib" title="Wajib"></i>
-                        <?php endif; ?>
-                    </a>
+                    <?php if ($boleh): ?>
+                        <a href="materi.php?topik=<?= urlencode($topik_aktif) ?>&konten=<?= $k['id'] ?>"
+                           class="<?= $k['id'] == $konten_id_aktif ? 'on' : '' ?>">
+                            <span class="tipe tipe-<?= $k['tipe'] ?>"><?= strtoupper($k['tipe']) ?></span>
+                            <span style="flex:1;min-width:0"><?= htmlspecialchars($k['judul']) ?></span>
+                            <?php if ($sudah): ?>
+                                <i class="icon-circle-check tick" title="Sudah selesai"></i>
+                            <?php elseif ($k['wajib']): ?>
+                                <i class="icon-asterisk wajib" title="Wajib"></i>
+                            <?php endif; ?>
+                        </a>
+                    <?php else: ?>
+                        <span class="terkunci" title="Selesaikan materi sebelumnya dulu"
+                              style="opacity:.45;cursor:not-allowed;display:flex;align-items:center;gap:8px;padding:10px 12px">
+                            <span class="tipe tipe-<?= $k['tipe'] ?>"><?= strtoupper($k['tipe']) ?></span>
+                            <span style="flex:1;min-width:0"><?= htmlspecialchars($k['judul']) ?></span>
+                            <i class="icon-lock"></i>
+                        </span>
+                    <?php endif; ?>
                 <?php endforeach; ?>
             </nav>
         </div>

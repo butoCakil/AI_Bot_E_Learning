@@ -278,6 +278,47 @@ function cek_akses_posttest(int $user_id): array {
     return ['boleh' => true, 'alasan' => ''];
 }
 
+// ── Cek prasyarat evaluasi (opsi A: konten sebelum evaluasi di urutan profil) ──
+function cek_prasyarat_evaluasi(int $user_id, string $profil_gabungan, string $topik, int $content_id): array {
+    $pdo  = db();
+    $stmt = $pdo->prepare("SELECT urutan_content FROM adaptation_rules WHERE profil_gabungan = ? AND topik = ?");
+    $stmt->execute([$profil_gabungan, $topik]);
+    $urutan = array_values(array_unique(json_decode($stmt->fetchColumn() ?: '[]', true) ?? []));
+
+    $pos = array_search($content_id, $urutan, true);
+    // Tidak ada di jalur profil ini, atau posisi pertama → tidak ada prasyarat
+    if ($pos === false || $pos === 0) {
+        return ['boleh' => true, 'total' => 0, 'selesai' => 0, 'kurang' => []];
+    }
+
+    // Boleh mundur: konten yang sudah pernah diselesaikan selalu bisa dibuka ulang
+    $stmt_self = $pdo->prepare("
+        SELECT 1 FROM activity_log
+        WHERE user_id = ? AND tipe = 'selesai_materi' AND content_id = ? LIMIT 1
+    ");
+    $stmt_self->execute([$user_id, $content_id]);
+    if ($stmt_self->fetchColumn()) {
+        return ['boleh' => true, 'total' => $pos, 'selesai' => $pos, 'kurang' => []];
+    }
+
+    $prasyarat = array_slice($urutan, 0, $pos);
+    $ph    = implode(',', array_fill(0, count($prasyarat), '?'));
+    $stmt2 = $pdo->prepare("
+        SELECT DISTINCT content_id FROM activity_log
+        WHERE user_id = ? AND tipe = 'selesai_materi' AND content_id IN ($ph)
+    ");
+    $stmt2->execute(array_merge([$user_id], $prasyarat));
+    $selesai = array_map('intval', array_column($stmt2->fetchAll(), 'content_id'));
+
+    $kurang = array_values(array_diff($prasyarat, $selesai));
+    return [
+        'boleh'   => empty($kurang),
+        'total'   => count($prasyarat),
+        'selesai' => count($prasyarat) - count($kurang),
+        'kurang'  => $kurang,
+    ];
+}
+
 // ── Hitung N-Gain ────────────────────────────────────────────────
 function hitung_ngain(int $skor_pre, int $skor_post, int $skor_maks = 12): array {
     if ($skor_maks - $skor_pre === 0) {
