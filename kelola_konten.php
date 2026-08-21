@@ -114,10 +114,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $pesan .= " Disisipkan di posisi {$urutan} — {$n_geser} konten lain digeser ke bawah.";
                 }
                 if ($topik_lama && $topik_lama !== $topik) {
-                    $n = cabut_konten_dari_rules((int) $content_id, $topik_lama);
-                    $pesan .= " Topik berubah — dicabut dari {$n} aturan topik lama."
-                            . ' Masukkan konten ini ke jalur belajar topik baru.';
+                    rapatkan_urutan_konten($topik_lama);
+                    regenerasi_rules_topik($topik_lama);
+                    $pesan .= " Topik berubah dari '{$topik_lama}'.";
                 }
+                regenerasi_rules_topik($topik);
+                $pesan .= ' Jalur belajar 9 profil disusun ulang otomatis.';
             } else {
                 // Geser bila posisi yang diminta sudah dipakai
                 $bentrok = $pdo->prepare("SELECT COUNT(*) FROM content WHERE topik=? AND urutan_default=?");
@@ -134,11 +136,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($n_geser > 0) {
                     $pesan .= " Disisipkan di posisi {$urutan} — {$n_geser} konten lain digeser ke bawah.";
                 }
-                $pesan .= ' Catatan: konten baru belum masuk jalur belajar profil mana pun — siswa belum bisa melihatnya.';
+                regenerasi_rules_topik($topik);
+                $pesan .= ' Jalur belajar 9 profil disusun ulang otomatis — konten sudah bisa dilihat siswa.';
             }
         }
     } elseif ($aksi === 'hapus' && $content_id) {
-        $stmt = $pdo->prepare("SELECT file_path FROM content WHERE id=?");
+        $stmt = $pdo->prepare("SELECT file_path, topik FROM content WHERE id=?");
         $stmt->execute([$content_id]);
         $row = $stmt->fetch();
         if ($row['file_path'] && file_exists(__DIR__ . '/' . $row['file_path'])) {
@@ -147,6 +150,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Cabut dulu dari semua aturan adaptif agar tidak meninggalkan ID yatim
         $n_rules = cabut_konten_dari_rules((int) $content_id);
         $pdo->prepare("DELETE FROM content WHERE id=?")->execute([$content_id]);
+
+        // Rapatkan nomor urut topik itu agar kembali 1..n tanpa lompatan
+        rapatkan_urutan_konten($row['topik']);
+        regenerasi_rules_topik($row['topik']);
+
         $pesan = 'Konten berhasil dihapus.'
                . ($n_rules > 0 ? " Dicabut juga dari {$n_rules} aturan jalur belajar." : '');
         $content_id = 0;
@@ -233,7 +241,15 @@ tinymce.init({
                         if (empty($child_konten)) continue;
                     ?>
                         <div class="kgroup">
-                            <div class="kgroup-t"><?= htmlspecialchars($parent['nama']) ?> › <?= htmlspecialchars($child['nama']) ?></div>
+                            <?php $cek = cek_kelengkapan_topik($child['slug']); ?>
+                            <div class="kgroup-t">
+                                <?= htmlspecialchars($parent['nama']) ?> › <?= htmlspecialchars($child['nama']) ?>
+                                <?php if ($cek['status'] !== 'ok'): ?>
+                                    <span class="badge-lengkap <?= $cek['status'] ?>" title="<?= htmlspecialchars($cek['pesan']) ?>">
+                                        <?= $cek['status'] === 'merah' ? '&#9679;' : '&#9679;' ?> <?= htmlspecialchars(implode(', ', $cek['hilang'])) ?>
+                                    </span>
+                                <?php endif; ?>
+                            </div>
                             <?php foreach ($child_konten as $k): ?>
                                 <a href="kelola_konten.php?edit=<?= $k['id'] ?>" class="kitem <?= $edit_id == $k['id'] ? 'on' : '' ?>">
                                     <span style="min-width:18px;font-size:11px;font-weight:800;color:var(--abu-muda);text-align:right"><?= (int) $k['urutan_default'] ?></span>
@@ -246,7 +262,15 @@ tinymce.init({
                     <?php endforeach; ?>
                 <?php elseif ($ada_konten): ?>
                     <div class="kgroup">
-                        <div class="kgroup-t"><?= htmlspecialchars($parent['nama']) ?></div>
+                        <?php $cek = cek_kelengkapan_topik($parent['slug']); ?>
+                        <div class="kgroup-t">
+                            <?= htmlspecialchars($parent['nama']) ?>
+                            <?php if ($cek['status'] !== 'ok'): ?>
+                                <span class="badge-lengkap <?= $cek['status'] ?>" title="<?= htmlspecialchars($cek['pesan']) ?>">
+                                    &#9679; <?= htmlspecialchars(implode(', ', $cek['hilang'])) ?>
+                                </span>
+                            <?php endif; ?>
+                        </div>
                         <?php foreach ($konten_list as $k): ?>
                             <?php if ($k['topik'] !== $parent['slug']) continue; ?>
                             <a href="kelola_konten.php?edit=<?= $k['id'] ?>" class="kitem <?= $edit_id == $k['id'] ? 'on' : '' ?>">
@@ -478,6 +502,10 @@ tinymce.init({
 
 .kgroup { margin-bottom:14px; }
 .kgroup-t { font-size:10.5px; font-weight:800; text-transform:uppercase; letter-spacing:.6px; color:var(--abu-muda); margin-bottom:7px; }
+.badge-lengkap { display:inline-block; margin-left:6px; padding:2px 7px; border-radius:999px;
+                 font-size:9.5px; font-weight:800; letter-spacing:.3px; text-transform:none; cursor:help; }
+.badge-lengkap.merah  { background:#FEE2E2; color:#B91C1C; }
+.badge-lengkap.kuning { background:#FEF3C7; color:#B45309; }
 .kitem { display:flex; align-items:center; gap:8px; padding:8px 10px; border-radius:var(--r-sm); cursor:pointer;
     border:1px solid transparent; margin-bottom:4px; text-decoration:none; color:var(--tinta); transition:.15s; }
 .kitem:hover { background:var(--kanvas); }

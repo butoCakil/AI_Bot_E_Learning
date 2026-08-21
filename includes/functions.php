@@ -484,3 +484,154 @@ function geser_urutan_konten(string $topik, int $mulai, ?int $kecuali_id = null)
     $stmt->execute($par);
     return $stmt->rowCount();
 }
+
+// ── Rapatkan urutan_default jadi 1..n tanpa lompatan ────────────
+function rapatkan_urutan_konten(string $topik): int {
+    $pdo  = db();
+    $stmt = $pdo->prepare("SELECT id FROM content WHERE topik = ? ORDER BY urutan_default, id");
+    $stmt->execute([$topik]);
+    $ids = array_column($stmt->fetchAll(), 'id');
+
+    $up = $pdo->prepare("UPDATE content SET urutan_default = ? WHERE id = ?");
+    foreach ($ids as $i => $id) {
+        $up->execute([$i + 1, $id]);
+    }
+    return count($ids);
+}
+
+// ── MODEL A: Adaptive Sequencing ────────────────────────────────
+// Menyusun urutan konten dari tipe, sesuai profil belajar & level.
+// Sumber aturan: dokumentasi proyek bagian 3.4 (Model A).
+function susun_urutan(string $profil_learning, string $level, string $topik): array {
+    $pdo  = db();
+    $stmt = $pdo->prepare("
+        SELECT id, tipe FROM content
+        WHERE topik = ? AND aktif = 1
+        ORDER BY urutan_default, id
+    ");
+    $stmt->execute([$topik]);
+
+    // Kelompokkan ID per tipe, sudah terurut
+    $per_tipe = ['teori' => [], 'langkah' => [], 'evaluasi' => [], 'jobsheet' => [], 'tantangan' => []];
+    foreach ($stmt->fetchAll() as $r) {
+        if (isset($per_tipe[$r['tipe']])) $per_tipe[$r['tipe']][] = (int) $r['id'];
+    }
+
+    $t1 = $per_tipe['teori'][0] ?? null;   // teori utama
+    $t2 = $per_tipe['teori'][1] ?? null;   // teori tambahan (khusus Conceptual)
+    $lk = $per_tipe['langkah'][0] ?? null;
+    $ev = $per_tipe['evaluasi'][0] ?? null;
+    $js = $per_tipe['jobsheet'][0] ?? null;
+    $tt = $per_tipe['tantangan'][0] ?? null;
+
+    $advanced = ($level === 'advanced');
+
+    switch ($profil_learning) {
+        case 'guided_step':
+            // T1 → Langkah → Evaluasi → Jobsheet → (Tantangan bila advanced)
+            $urutan = [$t1, $lk, $ev, $js];
+            if ($advanced) $urutan[] = $tt;
+            break;
+
+        case 'conceptual':
+            // T1 → T2 → Evaluasi → Langkah → Jobsheet → (Tantangan bila advanced)
+            $urutan = [$t1, $t2, $ev, $lk, $js];
+            if ($advanced) $urutan[] = $tt;
+            break;
+
+        case 'practice_oriented':
+            // Jobsheet → Tantangan → Langkah → T1 → Evaluasi
+            $urutan = [$js, $tt, $lk, $t1, $ev];
+            break;
+
+        default:
+            $urutan = [$t1, $lk, $ev, $js];
+    }
+
+    // Buang tipe yang tidak tersedia di topik ini
+    return array_values(array_unique(array_filter($urutan, fn($v) => $v !== null)));
+}
+
+// ── Regenerasi adaptation_rules untuk satu topik (9 profil) ──────
+function regenerasi_rules_topik(string $topik): int {
+    // Topik parent tidak punya konten sendiri — tidak perlu aturan
+    if (!empty(get_sub_topik($topik))) return 0;
+
+    $pdo     = db();
+    $profil  = ['guided_step', 'conceptual', 'practice_oriented'];
+    $level   = ['beginner', 'intermediate', 'advanced'];
+    $jumlah  = 0;
+
+    foreach ($level as $lv) {
+        foreach ($profil as $pf) {
+            $gabungan = "{$lv}_{$pf}";
+            $urutan   = susun_urutan($pf, $lv, $topik);
+
+            // Konten wajib: semua kecuali tantangan (tantangan bersifat pengayaan)
+            $wajib = [];
+            if ($urutan) {
+                $ph   = implode(',', array_fill(0, count($urutan), '?'));
+                $q    = $pdo->prepare("SELECT id FROM content WHERE id IN ($ph) AND tipe <> 'tantangan'");
+                $q->execute($urutan);
+                $wajib = array_map('intval', array_column($q->fetchAll(), 'id'));
+            }
+
+            $cek = $pdo->prepare("SELECT id FROM adaptation_rules WHERE profil_gabungan = ? AND topik = ?");
+            $cek->execute([$gabungan, $topik]);
+            $ada = $cek->fetchColumn();
+
+            if ($ada) {
+                $up = $pdo->prepare("UPDATE adaptation_rules SET urutan_content = ?, konten_wajib = ? WHERE id = ?");
+                $up->execute([json_encode($urutan), json_encode($wajib), $ada]);
+            } else {
+                $in = $pdo->prepare("INSERT INTO adaptation_rules (profil_gabungan, topik, urutan_content, konten_wajib) VALUES (?,?,?,?)");
+                $in->execute([$gabungan, $topik, json_encode($urutan), json_encode($wajib)]);
+            }
+            $jumlah++;
+        }
+    }
+    return $jumlah;
+}
+
+// ── Periksa kelengkapan tipe konten per topik ───────────────────
+// Return: ['status' => 'ok|kuning|merah', 'hilang' => [...], 'pesan' => '...']
+function cek_kelengkapan_topik(string $topik): array {
+    // Topik parent tidak menampung konten — selalu dianggap tidak relevan
+    if (count(get_sub_topik($topik)) > 0) {
+        return ['status' => 'ok', 'hilang' => [], 'pesan' => 'Topik induk — konten ada di sub-topik.'];
+    }
+
+    $pdo  = db();
+    $stmt = $pdo->prepare("SELECT DISTINCT tipe FROM content WHERE topik = ? AND aktif = 1");
+    $stmt->execute([$topik]);
+    $ada = array_column($stmt->fetchAll(), 'tipe');
+
+    $wajib_merah  = ['evaluasi' => 'Evaluasi', 'jobsheet' => 'Jobsheet'];
+    $wajib_kuning = ['teori' => 'Teori', 'langkah' => 'Langkah Kerja', 'tantangan' => 'Tantangan'];
+
+    $hilang_merah  = [];
+    $hilang_kuning = [];
+    foreach ($wajib_merah as $t => $label) {
+        if (!in_array($t, $ada, true)) $hilang_merah[] = $label;
+    }
+    foreach ($wajib_kuning as $t => $label) {
+        if (!in_array($t, $ada, true)) $hilang_kuning[] = $label;
+    }
+
+    if ($hilang_merah) {
+        return [
+            'status' => 'merah',
+            'hilang' => array_merge($hilang_merah, $hilang_kuning),
+            'pesan'  => 'Belum ada konten: ' . implode(', ', $hilang_merah)
+                      . '. Alur belajar semua profil terputus di topik ini.',
+        ];
+    }
+    if ($hilang_kuning) {
+        return [
+            'status' => 'kuning',
+            'hilang' => $hilang_kuning,
+            'pesan'  => 'Belum ada konten: ' . implode(', ', $hilang_kuning) . '.',
+        ];
+    }
+    return ['status' => 'ok', 'hilang' => [], 'pesan' => 'Lengkap.'];
+}
