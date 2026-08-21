@@ -235,51 +235,65 @@ tinymce.init({
                     if (in_array($k['topik'], $slugs)) { $ada_konten = true; break; }
                 }
             ?>
-                <?php if (!empty($parent['children'])): ?>
+                                <?php if (!empty($parent['children'])): ?>
                     <?php foreach ($parent['children'] as $child):
                         $child_konten = array_filter($konten_list, fn($k) => $k['topik'] === $child['slug']);
                         if (empty($child_konten)) continue;
+                        $cek   = cek_kelengkapan_topik($child['slug']);
+                        $buka  = false;
+                        foreach ($child_konten as $k) { if ($edit_id == $k['id']) { $buka = true; break; } }
                     ?>
-                        <div class="kgroup">
-                            <?php $cek = cek_kelengkapan_topik($child['slug']); ?>
-                            <div class="kgroup-t">
-                                <?= htmlspecialchars($parent['nama']) ?> › <?= htmlspecialchars($child['nama']) ?>
+                        <div class="kgroup <?= $buka ? 'buka aktif' : '' ?>">
+                            <div class="kgroup-t" onclick="toggleGroup(this)">
+                                <i class="icon-chevron-right kchev"></i>
+                                <span class="kgroup-nama"><?= htmlspecialchars($parent['nama']) ?> › <?= htmlspecialchars($child['nama']) ?></span>
+                                <span class="kcount"><?= count($child_konten) ?></span>
                                 <?php if ($cek['status'] !== 'ok'): ?>
                                     <span class="badge-lengkap <?= $cek['status'] ?>" title="<?= htmlspecialchars($cek['pesan']) ?>">
-                                        <?= $cek['status'] === 'merah' ? '&#9679;' : '&#9679;' ?> <?= htmlspecialchars(implode(', ', $cek['hilang'])) ?>
+                                        &#9679; <?= htmlspecialchars(implode(', ', $cek['hilang'])) ?>
                                     </span>
                                 <?php endif; ?>
                             </div>
-                            <?php foreach ($child_konten as $k): ?>
-                                <a href="kelola_konten.php?edit=<?= $k['id'] ?>" class="kitem <?= $edit_id == $k['id'] ? 'on' : '' ?>">
-                                    <span style="min-width:18px;font-size:11px;font-weight:800;color:var(--abu-muda);text-align:right"><?= (int) $k['urutan_default'] ?></span>
-                                    <span class="tipe tipe-<?= $k['tipe'] ?>"><?= strtoupper($k['tipe']) ?></span>
-                                    <span class="kitem-j"><?= htmlspecialchars(mb_strimwidth($k['judul'],0,28,'…')) ?></span>
-                                    <?php if (!$k['aktif']): ?><i class="icon-eye-off" style="color:var(--abu-muda);font-size:13px"></i><?php endif; ?>
-                                </a>
-                            <?php endforeach; ?>
+                            <div class="kgroup-body">
+                                <?php foreach ($child_konten as $k): ?>
+                                    <a href="kelola_konten.php?edit=<?= $k['id'] ?>" class="kitem <?= $edit_id == $k['id'] ? 'on' : '' ?>">
+                                        <span class="knum"><?= (int) $k['urutan_default'] ?></span>
+                                        <span class="tipe tipe-<?= $k['tipe'] ?>"><?= strtoupper($k['tipe']) ?></span>
+                                        <span class="kitem-j"><?= htmlspecialchars(mb_strimwidth($k['judul'],0,28,'…')) ?></span>
+                                        <?php if (!$k['aktif']): ?><i class="icon-eye-off" style="color:var(--abu-muda);font-size:13px"></i><?php endif; ?>
+                                    </a>
+                                <?php endforeach; ?>
+                            </div>
                         </div>
                     <?php endforeach; ?>
                 <?php elseif ($ada_konten): ?>
-                    <div class="kgroup">
-                        <?php $cek = cek_kelengkapan_topik($parent['slug']); ?>
-                        <div class="kgroup-t">
-                            <?= htmlspecialchars($parent['nama']) ?>
+                    <?php
+                        $own_konten = array_filter($konten_list, fn($k) => $k['topik'] === $parent['slug']);
+                        $cek  = cek_kelengkapan_topik($parent['slug']);
+                        $buka = false;
+                        foreach ($own_konten as $k) { if ($edit_id == $k['id']) { $buka = true; break; } }
+                    ?>
+                    <div class="kgroup <?= $buka ? 'buka' : '' ?>">
+                        <div class="kgroup-t" onclick="toggleGroup(this)">
+                            <i class="icon-chevron-right kchev"></i>
+                            <span class="kgroup-nama"><?= htmlspecialchars($parent['nama']) ?></span>
+                            <span class="kcount"><?= count($own_konten) ?></span>
                             <?php if ($cek['status'] !== 'ok'): ?>
                                 <span class="badge-lengkap <?= $cek['status'] ?>" title="<?= htmlspecialchars($cek['pesan']) ?>">
                                     &#9679; <?= htmlspecialchars(implode(', ', $cek['hilang'])) ?>
                                 </span>
                             <?php endif; ?>
                         </div>
-                        <?php foreach ($konten_list as $k): ?>
-                            <?php if ($k['topik'] !== $parent['slug']) continue; ?>
-                            <a href="kelola_konten.php?edit=<?= $k['id'] ?>" class="kitem <?= $edit_id == $k['id'] ? 'on' : '' ?>">
-                                <span style="min-width:18px;font-size:11px;font-weight:800;color:var(--abu-muda);text-align:right"><?= (int) $k['urutan_default'] ?></span>
-                                <span class="tipe tipe-<?= $k['tipe'] ?>"><?= strtoupper($k['tipe']) ?></span>
-                                <span class="kitem-j"><?= htmlspecialchars(mb_strimwidth($k['judul'],0,28,'…')) ?></span>
-                                <?php if (!$k['aktif']): ?><i class="icon-eye-off" style="color:var(--abu-muda);font-size:13px"></i><?php endif; ?>
-                            </a>
-                        <?php endforeach; ?>
+                        <div class="kgroup-body">
+                            <?php foreach ($own_konten as $k): ?>
+                                <a href="kelola_konten.php?edit=<?= $k['id'] ?>" class="kitem <?= $edit_id == $k['id'] ? 'on' : '' ?>">
+                                    <span class="knum"><?= (int) $k['urutan_default'] ?></span>
+                                    <span class="tipe tipe-<?= $k['tipe'] ?>"><?= strtoupper($k['tipe']) ?></span>
+                                    <span class="kitem-j"><?= htmlspecialchars(mb_strimwidth($k['judul'],0,28,'…')) ?></span>
+                                    <?php if (!$k['aktif']): ?><i class="icon-eye-off" style="color:var(--abu-muda);font-size:13px"></i><?php endif; ?>
+                                </a>
+                            <?php endforeach; ?>
+                        </div>
                     </div>
                 <?php endif; ?>
             <?php endforeach; ?>
@@ -501,7 +515,25 @@ tinymce.init({
 @media (max-width:768px){ .klayout { grid-template-columns:1fr; } }
 
 .kgroup { margin-bottom:14px; }
-.kgroup-t { font-size:10.5px; font-weight:800; text-transform:uppercase; letter-spacing:.6px; color:var(--abu-muda); margin-bottom:7px; }
+.kgroup-t { display:flex; align-items:center; gap:6px; font-size:10.5px; font-weight:800;
+            text-transform:uppercase; letter-spacing:.6px; color:var(--abu-muda);
+            padding:7px 4px; margin-bottom:2px; cursor:pointer; border-radius:8px;
+            user-select:none; transition:background .12s; }
+.kgroup-t:hover { background:var(--biru-muda,#EFF6FF); }
+.kgroup-nama { flex:1; min-width:0; }
+.kchev { font-size:13px; flex-shrink:0; transition:transform .15s; }
+.kgroup.buka .kchev { transform:rotate(90deg); }
+.kcount { background:#E5E7EB; color:#4B5563; border-radius:999px; padding:1px 7px;
+          font-size:9.5px; font-weight:800; text-transform:none; flex-shrink:0; }
+.kgroup-body { display:none; padding-bottom:6px; }
+.kgroup.buka .kgroup-body { display:block; }
+.kgroup.aktif > .kgroup-t { color:var(--teal,#0EA5A4); background:var(--teal-muda,#ECFDF5); }
+.kgroup.aktif > .kgroup-t .kchev { color:var(--teal,#0EA5A4); }
+.kgroup.aktif > .kgroup-t::after { content:'sedang diedit'; font-size:9px; font-weight:800;
+    text-transform:none; letter-spacing:0; color:var(--teal,#0EA5A4);
+    background:#fff; border:1px solid var(--teal,#0EA5A4); border-radius:999px;
+    padding:1px 7px; flex-shrink:0; }
+.knum { min-width:18px; font-size:11px; font-weight:800; color:var(--abu-muda); text-align:right; }
 .badge-lengkap { display:inline-block; margin-left:6px; padding:2px 7px; border-radius:999px;
                  font-size:9.5px; font-weight:800; letter-spacing:.3px; text-transform:none; cursor:help; }
 .badge-lengkap.merah  { background:#FEE2E2; color:#B91C1C; }
@@ -626,6 +658,13 @@ function handleTopikChange(val) {
         var f = document.getElementById('input-urutan');
         if (f && URUTAN_NEXT[val]) f.value = URUTAN_NEXT[val];
     }
+}
+
+function toggleGroup(el) {
+    var grup = el.parentElement;
+    var sudahBuka = grup.classList.contains('buka');
+    document.querySelectorAll('.kgroup.buka').forEach(function(g) { g.classList.remove('buka'); });
+    if (!sudahBuka) grup.classList.add('buka');
 }
 
 function toSlug(str) {
