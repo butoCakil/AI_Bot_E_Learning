@@ -189,6 +189,13 @@ include __DIR__ . '/includes/topbar_guru.php';
 ?>
 <script src="https://cdn.tiny.cloud/1/vowvs5ciyejykt64n2v6bwrwrj8ftsh3tg9ubh494qcf9ri0/tinymce/6/tinymce.min.js" referrerpolicy="origin"></script>
 <script>
+function toggleGroup(el) {
+    var grup = el.parentElement;
+    var sudahBuka = grup.classList.contains('buka');
+    document.querySelectorAll('.kgroup.buka').forEach(function(g) { g.classList.remove('buka'); });
+    if (!sudahBuka) grup.classList.add('buka');
+}
+
 tinymce.init({
     selector: '#editor-isi',
     plugins: 'lists table link image code',
@@ -273,7 +280,7 @@ tinymce.init({
                         $buka = false;
                         foreach ($own_konten as $k) { if ($edit_id == $k['id']) { $buka = true; break; } }
                     ?>
-                    <div class="kgroup <?= $buka ? 'buka' : '' ?>">
+                    <div class="kgroup <?= $buka ? 'buka aktif' : '' ?>">
                         <div class="kgroup-t" onclick="toggleGroup(this)">
                             <i class="icon-chevron-right kchev"></i>
                             <span class="kgroup-nama"><?= htmlspecialchars($parent['nama']) ?></span>

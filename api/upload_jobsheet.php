@@ -44,9 +44,9 @@ if (!in_array($ext, $allowed_ext) || !in_array($mime, $allowed_mime)) {
     exit;
 }
 
-if ($size > 5 * 1024 * 1024) { // maks 5MB
+if ($size > 10 * 1024 * 1024) { // maks 10MB — selaras dgn php.ini & form
     http_response_code(400);
-    echo json_encode(['ok' => false, 'msg' => 'Ukuran file maksimal 5MB']);
+    echo json_encode(['ok' => false, 'msg' => 'Ukuran file maksimal 10MB']);
     exit;
 }
 
@@ -90,5 +90,7 @@ $stmt->execute([
 ]);
 
 log_aktivitas($user_id, 'upload_jobsheet', $content_id, $topik);
+// Jobsheet baru tuntas setelah file terunggah
+log_aktivitas($user_id, 'selesai_materi', $content_id, $topik);
 
 echo json_encode(['ok' => true, 'filename' => $original_name]);

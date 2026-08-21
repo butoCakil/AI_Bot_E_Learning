@@ -179,6 +179,8 @@ $durasi_timer = 35;
 // Cek jobsheet submission
 $is_jobsheet = $konten_aktif && $konten_aktif['tipe'] === 'jobsheet' && $konten_aktif['perlu_upload'];
 $jobsheet_uploaded = false;
+// Jobsheet wajib yang belum diunggah: tombol boleh terbuka, tapi belum dihitung tuntas
+$tunda_selesai = $is_jobsheet && !$jobsheet_uploaded;
 if ($is_jobsheet) {
     $stmt_js = $pdo->prepare("SELECT id, file_original_name, nilai FROM jobsheet_submissions WHERE user_id = ? AND content_id = ?");
     $stmt_js->execute([$user_id, $konten_id_aktif]);
@@ -581,10 +583,12 @@ function lanjutDariModal() {
             clearInterval(interval);
             timerSelesai = true;
 
-            var fd = new FormData();
-            fd.append('content_id', contentId);
-            fd.append('topik', topik);
-            fetch('/api/selesai_materi.php', { method: 'POST', body: fd });
+            if (!<?= $tunda_selesai ? 'true' : 'false' ?>) {
+                var fd = new FormData();
+                fd.append('content_id', contentId);
+                fd.append('topik', topik);
+                fetch('/api/selesai_materi.php', { method: 'POST', body: fd });
+            }
 
             tx.innerHTML = label + ' <i class="icon-arrow-right"></i>';
             btn.classList.remove('btn-off');
@@ -592,7 +596,9 @@ function lanjutDariModal() {
 
             // Modal berubah jadi ajakan lanjut (walau sedang terbuka)
             if (mJudul) mJudul.textContent = 'Materi ini sudah selesai';
-            if (mTubuh) mTubuh.innerHTML = 'Kamu sudah membaca cukup lama. Silakan lanjut ke materi berikutnya.';
+            if (mTubuh) mTubuh.innerH            if (mTubuh) mTubuh.innerHTML = <?= $tunda_selesai
+                ? "'Kamu boleh lanjut ke materi berikutnya. Namun jobsheet ini baru dihitung tuntas setelah kamu mengunggah hasil kerjamu.'"
+                : "'Kamu sudah membaca cukup lama. Silakan lanjut ke materi berikutnya.'" ?>;TML = 'Kamu sudah membaca cukup lama. Silakan lanjut ke materi berikutnya.';
             if (mIkon)  mIkon.className = 'modal-ikon hijau';
             if (mBtn) {
                 mBtn.textContent = 'Lanjut sekarang';
