@@ -183,6 +183,7 @@ include __DIR__ . '/includes/topbar_guru.php';
         <button class="tab-btn aktif" onclick="bukaTab('ringkasan', this)"><i class="icon-layout-dashboard"></i> Ringkasan</button>
         <button class="tab-btn" onclick="bukaTab('siswa', this)"><i class="icon-users"></i> Siswa</button>
         <button class="tab-btn" onclick="bukaTab('penilaian', this)"><i class="icon-clipboard-check"></i> Penilaian</button>
+        <a href="rekap_nilai.php" class="tab-btn" style="text-decoration:none"><i class="icon-clipboard-list"></i> Rekap Nilai</a>
         <button class="tab-btn" onclick="bukaTab('materi', this)"><i class="icon-folder-tree"></i> Materi</button>
         <button class="tab-btn" onclick="bukaTab('pengaturan', this)"><i class="icon-target"></i> Post-Test</button>
         <button class="tab-btn" onclick="bukaTab('aktivitas', this)"><i class="icon-activity"></i> Aktivitas</button>
@@ -437,7 +438,50 @@ include __DIR__ . '/includes/topbar_guru.php';
         JOIN content c ON c.id = js.content_id
         ORDER BY js.created_at DESC
     ")->fetchAll();
+
+    // ── Data rekap nilai seluruh item (evaluasi + jobsheet) ──
+    // Catatan: tidak JOIN ke tabel topik karena collation kolom berbeda.
+    $nama_topik_map = get_topik_list();
+    $item_nilai = $pdo->query("
+        SELECT c.id, c.judul, c.tipe, c.topik
+        FROM content c
+        WHERE c.aktif = 1 AND c.tipe IN ('evaluasi','jobsheet')
+        ORDER BY c.topik, c.urutan_default, c.id
+    ")->fetchAll();
+    foreach ($item_nilai as $i => $it) {
+        $item_nilai[$i]['topik_nama'] = $nama_topik_map[$it['topik']] ?? $it['topik'];
+    }
+
+    $nilai_eval = [];
+    foreach ($pdo->query("SELECT user_id, content_id, persentase FROM evaluasi_results")->fetchAll() as $r) {
+        $nilai_eval[$r['user_id']][$r['content_id']] = (int) $r['persentase'];
+    }
+
+    $job_ada = [];
+    $nilai_job = [];
+    foreach ($pdo->query("SELECT user_id, content_id, nilai FROM jobsheet_submissions")->fetchAll() as $r) {
+        $job_ada[$r['user_id']][$r['content_id']] = true;
+        if ($r['nilai'] !== null) $nilai_job[$r['user_id']][$r['content_id']] = (float) $r['nilai'];
+    }
+
+    $rekap_siswa = $pdo->query("
+        SELECT u.id, u.nama, u.nis, u.kelas,
+               p.skor_pengetahuan AS skor_pre,
+               pt.skor_pengetahuan AS skor_post
+        FROM users u
+        LEFT JOIN pre_test_results p ON p.id = (
+            SELECT id FROM pre_test_results WHERE user_id = u.id ORDER BY id DESC LIMIT 1)
+        LEFT JOIN post_test_results pt ON pt.id = (
+            SELECT id FROM post_test_results WHERE user_id = u.id ORDER BY id DESC LIMIT 1)
+        WHERE u.role = 'siswa'
+        ORDER BY u.kelas, u.nama
+    ")->fetchAll();
     ?>
+
+    <div class="cta" style="margin-bottom:16px">
+        <a href="rekap_nilai.php" class="btn btn-3"><i class="icon-clipboard-list"></i> Lihat Rekap Nilai Seluruh Item</a>
+    </div>
+
     <div class="card">
         <div class="card-h" style="margin-bottom:14px"><h3><i class="icon-paperclip"></i> Submission jobsheet siswa (<?= count($submissions) ?>)</h3></div>
         <?php if ($submissions): ?>
@@ -838,14 +882,6 @@ include __DIR__ . '/includes/topbar_guru.php';
 </div>
 
 <style>
-.dtab-wrap { background:var(--kartu); border-bottom:1px solid var(--garis); position:sticky; top:var(--topbar-h); z-index:40; }
-.dtabs { max-width:1200px; margin:0 auto; padding:0 16px; display:flex; gap:4px; overflow-x:auto; }
-.tab-btn { border:0; background:transparent; font-family:inherit; font-size:13px; font-weight:600; color:var(--abu);
-    padding:14px 16px; cursor:pointer; white-space:nowrap; border-bottom:3px solid transparent; transition:.15s;
-    display:flex; align-items:center; gap:6px; }
-.tab-btn:hover { color:var(--tinta); }
-.tab-btn.aktif { color:var(--teal); border-bottom-color:var(--teal); }
-
 .dwrap { max-width:1200px; margin:0 auto; padding:18px 16px 40px; }
 .tab-panel { display:none; }
 .tab-panel.aktif { display:block; }
@@ -1100,8 +1136,6 @@ function copySSH() {
 }
 function copySSHWC() {
     const cmd = document.getElementById('ssh_cmd_wc').textContent;
-    navigator.function copySSHWC() {
-    const cmd = document.getElementById('ssh_cmd_wc').textContent;
     navigator.clipboard.writeText(cmd).then(() => {
         const btn = document.getElementById('btn_copy_ssh_wc');
         btn.innerHTML = '✅';
@@ -1112,11 +1146,6 @@ function copySSHBG() {
     const cmd = document.getElementById('ssh_cmd_bg').textContent;
     navigator.clipboard.writeText(cmd).then(() => {
         const btn = document.getElementById('btn_copy_ssh_bg');
-        btn.innerHTML = '✅';
-        setTimeout(() => { btn.innerHTML = '<i class="icon-copy"></i>'; }, 2000);
-    });
-}clipboard.writeText(cmd).then(() => {
-        const btn = document.getElementById('btn_copy_ssh_wc');
         btn.innerHTML = '✅';
         setTimeout(() => { btn.innerHTML = '<i class="icon-copy"></i>'; }, 2000);
     });

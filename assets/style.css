@@ -421,3 +421,12 @@ a { color: inherit; }
 .modal-ikon.hijau { background:var(--teal-muda,#ECFDF5); color:var(--teal,#0EA5A4); }
 .modal-kotak h3 { font-size:17px; font-weight:800; letter-spacing:-.3px; margin-bottom:10px; }
 .modal-kotak p { font-size:13.5px; color:var(--abu,#64748B); line-height:1.65; margin-bottom:20px; }
+
+/* ── Deretan tab panel guru (dashboard & rekap) ──────────────── */
+.dtab-wrap { background:var(--kartu); border-bottom:1px solid var(--garis); position:sticky; top:var(--topbar-h); z-index:40; }
+.dtabs { max-width:1200px; margin:0 auto; padding:0 16px; display:flex; gap:4px; overflow-x:auto; }
+.tab-btn { border:0; background:transparent; font-family:inherit; font-size:13px; font-weight:600; color:var(--abu);
+    padding:14px 16px; cursor:pointer; white-space:nowrap; border-bottom:3px solid transparent; transition:.15s;
+    display:flex; align-items:center; gap:6px; text-decoration:none; }
+.tab-btn:hover { color:var(--tinta); }
+.tab-btn.aktif { color:var(--teal); border-bottom-color:var(--teal); }
