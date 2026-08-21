@@ -90,14 +90,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if (!$pesan) {
             if ($content_id) {
+                // Deteksi pindah topik: cabut dari aturan topik lama
+                $cek_lama = $pdo->prepare("SELECT topik FROM content WHERE id=?");
+                $cek_lama->execute([$content_id]);
+                $topik_lama = $cek_lama->fetchColumn();
+
                 $stmt = $pdo->prepare("UPDATE content SET judul=?, topik=?, tipe=?, isi=?, file_path=?, urutan_default=?, aktif=?, perlu_upload=? WHERE id=?");
                 $stmt->execute([$judul, $topik, $tipe, $isi, $file_path, $urutan, $aktif, $perlu_upload, $content_id]);
+
+                $pesan = 'Konten berhasil disimpan.';
+                if ($topik_lama && $topik_lama !== $topik) {
+                    $n = cabut_konten_dari_rules((int) $content_id, $topik_lama);
+                    $pesan .= " Topik berubah — dicabut dari {$n} aturan topik lama."
+                            . ' Masukkan konten ini ke jalur belajar topik baru.';
+                }
             } else {
                 $stmt = $pdo->prepare("INSERT INTO content (judul, topik, tipe, isi, file_path, urutan_default, aktif, perlu_upload) VALUES (?,?,?,?,?,?,?,?)");
                 $stmt->execute([$judul, $topik, $tipe, $isi, $file_path, $urutan, $aktif, $perlu_upload]);
                 $content_id = $pdo->lastInsertId();
+                $pesan = 'Konten berhasil disimpan. Catatan: konten baru belum masuk jalur belajar profil mana pun — siswa belum bisa melihatnya.';
             }
-            $pesan = 'Konten berhasil disimpan.';
         }
     } elseif ($aksi === 'hapus' && $content_id) {
         $stmt = $pdo->prepare("SELECT file_path FROM content WHERE id=?");
@@ -106,8 +118,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($row['file_path'] && file_exists(__DIR__ . '/' . $row['file_path'])) {
             unlink(__DIR__ . '/' . $row['file_path']);
         }
+        // Cabut dulu dari semua aturan adaptif agar tidak meninggalkan ID yatim
+        $n_rules = cabut_konten_dari_rules((int) $content_id);
         $pdo->prepare("DELETE FROM content WHERE id=?")->execute([$content_id]);
-        $pesan = 'Konten berhasil dihapus.';
+        $pesan = 'Konten berhasil dihapus.'
+               . ($n_rules > 0 ? " Dicabut juga dari {$n_rules} aturan jalur belajar." : '');
         $content_id = 0;
     }
 }

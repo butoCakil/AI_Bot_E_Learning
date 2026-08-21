@@ -431,3 +431,37 @@ function get_parent_topik(string $slug): ?array {
     $stmt->execute([$slug]);
     return $stmt->fetch() ?: null;
 }
+
+// ── Cabut content_id dari semua adaptation_rules ────────────────
+// Dipanggil saat konten dihapus atau pindah topik, agar tidak ada ID yatim.
+function cabut_konten_dari_rules(int $content_id, ?string $hanya_topik = null): int {
+    $pdo = db();
+    $sql = "SELECT id, topik, urutan_content, konten_wajib FROM adaptation_rules";
+    $par = [];
+    if ($hanya_topik !== null) {
+        $sql .= " WHERE topik = ?";
+        $par[] = $hanya_topik;
+    }
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($par);
+
+    $terubah = 0;
+    foreach ($stmt->fetchAll() as $r) {
+        $urutan = json_decode($r['urutan_content'], true) ?? [];
+        $wajib  = json_decode($r['konten_wajib'], true) ?? [];
+
+        $urutan_baru = array_values(array_diff($urutan, [$content_id]));
+        $wajib_baru  = array_values(array_diff($wajib,  [$content_id]));
+
+        if ($urutan_baru === $urutan && $wajib_baru === $wajib) continue;
+
+        $up = $pdo->prepare("UPDATE adaptation_rules SET urutan_content = ?, konten_wajib = ? WHERE id = ?");
+        $up->execute([
+            json_encode($urutan_baru),
+            json_encode($wajib_baru),
+            $r['id'],
+        ]);
+        $terubah++;
+    }
+    return $terubah;
+}
