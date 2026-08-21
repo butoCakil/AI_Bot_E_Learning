@@ -170,6 +170,10 @@ $pakai_timer = false;
 if ($konten_aktif && !$is_evaluasi) {
     $pakai_timer = !in_array($konten_id_aktif, $konten_dibuka);
 }
+
+// Evaluasi yang belum dikerjakan → tombol "Selanjutnya" dicegat modal
+$evaluasi_belum = $is_evaluasi
+    && !in_array((int) $konten_id_aktif, array_map('intval', $evaluasi_selesai), true);
 $durasi_timer = 35;
 
 // Cek jobsheet submission
@@ -451,11 +455,13 @@ include __DIR__ . '/includes/topbar_siswa.php';
                     <a href="<?= $href_next ?>" class="btn btn-off" id="btn-next"
                        data-href="<?= $href_next ?>"
                        data-label="<?= htmlspecialchars($label_next) ?>"
-                       data-kelas="<?= $kelas_next ?>">
+                       data-kelas="<?= $kelas_next ?>"
+                       onclick="return klikNextTimer(event)">
                         <span id="btn-next-tx"><?= htmlspecialchars($label_next) ?> (<?= $durasi_timer ?>s)</span>
                     </a>
                 <?php else: ?>
-                    <a href="<?= $href_next ?>" class="btn <?= $kelas_next ?>">
+                    <a href="<?= $href_next ?>" class="btn <?= $kelas_next ?>"
+                       <?= $evaluasi_belum ? 'onclick="bukaModalEvaluasi(); return false;"' : '' ?>>
                         <?= htmlspecialchars($label_next) ?> <i class="icon-arrow-right"></i>
                     </a>
                 <?php endif; ?>
@@ -533,6 +539,22 @@ document.getElementById('file-jobsheet').addEventListener('change', function() {
 
 <?php if ($pakai_timer): ?>
 <script>
+var timerSelesai = false;
+var timerHref    = '';
+
+function klikNextTimer(e) {
+    if (timerSelesai) return true;          // sudah boleh lanjut, navigasi normal
+    e.preventDefault();
+    document.getElementById('modalTimer').classList.add('on');
+    return false;
+}
+function tutupModalTimer() {
+    document.getElementById('modalTimer').classList.remove('on');
+}
+function lanjutDariModal() {
+    if (timerSelesai && timerHref) window.location.href = timerHref;
+}
+
 (function() {
     var btn = document.getElementById('btn-next');
     if (!btn) return;
@@ -545,10 +567,19 @@ document.getElementById('file-jobsheet').addEventListener('change', function() {
     var contentId = <?= $konten_id_aktif ?>;
     var topik     = '<?= htmlspecialchars($topik_aktif, ENT_QUOTES) ?>';
 
+    timerHref = href;
+
     var interval = setInterval(function() {
+        var mSisa  = document.getElementById('modal-timer-sisa');
+        var mTubuh = document.getElementById('modal-timer-tubuh');
+        var mJudul = document.getElementById('modal-timer-judul');
+        var mIkon  = document.getElementById('modal-timer-ikon');
+        var mBtn   = document.getElementById('modal-timer-btn');
+
         sisa--;
         if (sisa <= 0) {
             clearInterval(interval);
+            timerSelesai = true;
 
             var fd = new FormData();
             fd.append('content_id', contentId);
@@ -558,15 +589,61 @@ document.getElementById('file-jobsheet').addEventListener('change', function() {
             tx.innerHTML = label + ' <i class="icon-arrow-right"></i>';
             btn.classList.remove('btn-off');
             btn.classList.add(kelas);
-            btn.addEventListener('click', function(e) {
-                e.preventDefault();
-                window.location.href = href;
-            });
+
+            // Modal berubah jadi ajakan lanjut (walau sedang terbuka)
+            if (mJudul) mJudul.textContent = 'Materi ini sudah selesai';
+            if (mTubuh) mTubuh.innerHTML = 'Kamu sudah membaca cukup lama. Silakan lanjut ke materi berikutnya.';
+            if (mIkon)  mIkon.className = 'modal-ikon hijau';
+            if (mBtn) {
+                mBtn.textContent = 'Lanjut sekarang';
+                mBtn.setAttribute('onclick', 'lanjutDariModal()');
+            }
         } else {
             tx.textContent = label + ' (' + sisa + 's)';
+            if (mSisa) mSisa.textContent = sisa;
         }
     }, 1000);
 })();
+</script>
+<?php endif; ?>
+
+<?php if ($pakai_timer): ?>
+<div id="modalTimer" class="modal-bg" onclick="if(event.target===this) tutupModalTimer()">
+    <div class="modal-kotak">
+        <div class="modal-ikon" id="modal-timer-ikon"><i class="icon-hourglass"></i></div>
+        <h3 id="modal-timer-judul">Baca materinya dulu ya</h3>
+        <p id="modal-timer-tubuh">
+            Tombol lanjut akan aktif dalam <b id="modal-timer-sisa"><?= $durasi_timer ?></b> detik.
+            Gunakan waktu ini untuk membaca materi di halaman ini.
+        </p>
+        <button type="button" class="btn btn-1" id="modal-timer-btn" onclick="tutupModalTimer()">Mengerti</button>
+    </div>
+</div>
+<?php endif; ?>
+
+<?php if ($evaluasi_belum): ?>
+<div id="modalEvaluasi" class="modal-bg" onclick="if(event.target===this) tutupModalEvaluasi()">
+    <div class="modal-kotak">
+        <div class="modal-ikon"><i class="icon-clipboard-list"></i></div>
+        <h3>Selesaikan evaluasi dulu</h3>
+        <p>
+            Jawab semua soal di halaman ini, lalu tekan <b>Kirim jawaban</b>.
+            Materi berikutnya akan terbuka setelah evaluasi kamu tersimpan.
+        </p>
+        <button type="button" class="btn btn-1" onclick="tutupModalEvaluasi()">Mengerti</button>
+    </div>
+</div>
+
+<script>
+function bukaModalEvaluasi() {
+    document.getElementById('modalEvaluasi').classList.add('on');
+}
+function tutupModalEvaluasi() {
+    document.getElementById('modalEvaluasi').classList.remove('on');
+}
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') tutupModalEvaluasi();
+});
 </script>
 <?php endif; ?>
 

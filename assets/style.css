@@ -407,3 +407,17 @@ a { color: inherit; }
 .nav-btn { display: flex; gap: 10px; justify-content: space-between; }
 .rata { display: flex; align-items: center; gap: 8px; }
 .tengah { text-align: center; }
+
+
+/* ── Modal umum (timer materi, peringatan evaluasi) ───────────── */
+.modal-bg { display:none; position:fixed; inset:0; background:rgba(15,23,42,.55);
+            z-index:200; align-items:center; justify-content:center; padding:20px; }
+.modal-bg.on { display:flex; }
+.modal-kotak { background:#fff; border-radius:var(--r-md,16px); padding:28px 24px;
+               max-width:380px; width:100%; text-align:center;
+               box-shadow:0 20px 50px rgba(0,0,0,.22); }
+.modal-ikon { width:56px; height:56px; border-radius:50%; background:var(--amber-muda,#FEF3C7);
+              color:#B45309; display:grid; place-items:center; font-size:24px; margin:0 auto 16px; }
+.modal-ikon.hijau { background:var(--teal-muda,#ECFDF5); color:var(--teal,#0EA5A4); }
+.modal-kotak h3 { font-size:17px; font-weight:800; letter-spacing:-.3px; margin-bottom:10px; }
+.modal-kotak p { font-size:13.5px; color:var(--abu,#64748B); line-height:1.65; margin-bottom:20px; }
