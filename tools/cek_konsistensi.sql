@@ -1,0 +1,2 @@
+-- Jalankan: mysql -u elearning_user -p elearning_adaptif < tools/cek_konsistensi.sql
+-- Semua hasil kosong = data konsisten.

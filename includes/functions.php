@@ -465,3 +465,22 @@ function cabut_konten_dari_rules(int $content_id, ?string $hanya_topik = null): 
     }
     return $terubah;
 }
+
+// ── Geser urutan_default agar tidak bertabrakan ─────────────────
+// Dipakai saat menyisipkan konten pada posisi yang sudah terisi.
+// Semua konten di topik itu dengan urutan >= $mulai digeser +1,
+// kecuali $kecuali_id (konten yang sedang disimpan).
+function geser_urutan_konten(string $topik, int $mulai, ?int $kecuali_id = null): int {
+    $pdo = db();
+    $sql = "UPDATE content SET urutan_default = urutan_default + 1
+            WHERE topik = ? AND urutan_default >= ?";
+    $par = [$topik, $mulai];
+    if ($kecuali_id !== null) {
+        $sql .= " AND id <> ?";
+        $par[] = $kecuali_id;
+    }
+    $sql .= " ORDER BY urutan_default DESC";   // dari besar ke kecil agar tidak bentrok
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($par);
+    return $stmt->rowCount();
+}

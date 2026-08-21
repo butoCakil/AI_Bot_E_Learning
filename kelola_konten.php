@@ -91,24 +91,50 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!$pesan) {
             if ($content_id) {
                 // Deteksi pindah topik: cabut dari aturan topik lama
-                $cek_lama = $pdo->prepare("SELECT topik FROM content WHERE id=?");
+                $cek_lama = $pdo->prepare("SELECT topik, urutan_default FROM content WHERE id=?");
                 $cek_lama->execute([$content_id]);
-                $topik_lama = $cek_lama->fetchColumn();
+                $lama       = $cek_lama->fetch();
+                $topik_lama = $lama['topik'] ?? null;
+
+                // Geser bila posisi tujuan sudah dipakai konten lain
+                $n_geser = 0;
+                if ($topik_lama !== $topik || (int) $lama['urutan_default'] !== $urutan) {
+                    $bentrok = $pdo->prepare("SELECT COUNT(*) FROM content WHERE topik=? AND urutan_default=? AND id<>?");
+                    $bentrok->execute([$topik, $urutan, $content_id]);
+                    if ($bentrok->fetchColumn() > 0) {
+                        $n_geser = geser_urutan_konten($topik, $urutan, (int) $content_id);
+                    }
+                }
 
                 $stmt = $pdo->prepare("UPDATE content SET judul=?, topik=?, tipe=?, isi=?, file_path=?, urutan_default=?, aktif=?, perlu_upload=? WHERE id=?");
                 $stmt->execute([$judul, $topik, $tipe, $isi, $file_path, $urutan, $aktif, $perlu_upload, $content_id]);
 
                 $pesan = 'Konten berhasil disimpan.';
+                if ($n_geser > 0) {
+                    $pesan .= " Disisipkan di posisi {$urutan} — {$n_geser} konten lain digeser ke bawah.";
+                }
                 if ($topik_lama && $topik_lama !== $topik) {
                     $n = cabut_konten_dari_rules((int) $content_id, $topik_lama);
                     $pesan .= " Topik berubah — dicabut dari {$n} aturan topik lama."
                             . ' Masukkan konten ini ke jalur belajar topik baru.';
                 }
             } else {
+                // Geser bila posisi yang diminta sudah dipakai
+                $bentrok = $pdo->prepare("SELECT COUNT(*) FROM content WHERE topik=? AND urutan_default=?");
+                $bentrok->execute([$topik, $urutan]);
+                $n_geser = $bentrok->fetchColumn() > 0
+                         ? geser_urutan_konten($topik, $urutan)
+                         : 0;
+
                 $stmt = $pdo->prepare("INSERT INTO content (judul, topik, tipe, isi, file_path, urutan_default, aktif, perlu_upload) VALUES (?,?,?,?,?,?,?,?)");
                 $stmt->execute([$judul, $topik, $tipe, $isi, $file_path, $urutan, $aktif, $perlu_upload]);
                 $content_id = $pdo->lastInsertId();
-                $pesan = 'Konten berhasil disimpan. Catatan: konten baru belum masuk jalur belajar profil mana pun — siswa belum bisa melihatnya.';
+
+                $pesan = 'Konten berhasil disimpan.';
+                if ($n_geser > 0) {
+                    $pesan .= " Disisipkan di posisi {$urutan} — {$n_geser} konten lain digeser ke bawah.";
+                }
+                $pesan .= ' Catatan: konten baru belum masuk jalur belajar profil mana pun — siswa belum bisa melihatnya.';
             }
         }
     } elseif ($aksi === 'hapus' && $content_id) {
@@ -138,6 +164,15 @@ if ($edit_id) {
 }
 
 $topik_list = get_topik_list();
+
+// Urutan berikutnya per topik — untuk isi otomatis field urutan pada konten baru
+$urutan_next = [];
+foreach (array_keys($topik_list) as $slug_t) {
+    $q = $pdo->prepare("SELECT COALESCE(MAX(urutan_default), 0) + 1 FROM content WHERE topik = ?");
+    $q->execute([$slug_t]);
+    $urutan_next[$slug_t] = (int) $q->fetchColumn();
+}
+
 $tipe_list  = ['teori' => 'Teori', 'langkah' => 'Langkah Kerja', 'jobsheet' => 'Jobsheet', 'evaluasi' => 'Evaluasi', 'tantangan' => 'Tantangan'];
 
 $page_title = 'Kelola Konten — AdaptLearn PRE';
@@ -201,6 +236,7 @@ tinymce.init({
                             <div class="kgroup-t"><?= htmlspecialchars($parent['nama']) ?> › <?= htmlspecialchars($child['nama']) ?></div>
                             <?php foreach ($child_konten as $k): ?>
                                 <a href="kelola_konten.php?edit=<?= $k['id'] ?>" class="kitem <?= $edit_id == $k['id'] ? 'on' : '' ?>">
+                                    <span style="min-width:18px;font-size:11px;font-weight:800;color:var(--abu-muda);text-align:right"><?= (int) $k['urutan_default'] ?></span>
                                     <span class="tipe tipe-<?= $k['tipe'] ?>"><?= strtoupper($k['tipe']) ?></span>
                                     <span class="kitem-j"><?= htmlspecialchars(mb_strimwidth($k['judul'],0,28,'…')) ?></span>
                                     <?php if (!$k['aktif']): ?><i class="icon-eye-off" style="color:var(--abu-muda);font-size:13px"></i><?php endif; ?>
@@ -214,6 +250,7 @@ tinymce.init({
                         <?php foreach ($konten_list as $k): ?>
                             <?php if ($k['topik'] !== $parent['slug']) continue; ?>
                             <a href="kelola_konten.php?edit=<?= $k['id'] ?>" class="kitem <?= $edit_id == $k['id'] ? 'on' : '' ?>">
+                                <span style="min-width:18px;font-size:11px;font-weight:800;color:var(--abu-muda);text-align:right"><?= (int) $k['urutan_default'] ?></span>
                                 <span class="tipe tipe-<?= $k['tipe'] ?>"><?= strtoupper($k['tipe']) ?></span>
                                 <span class="kitem-j"><?= htmlspecialchars(mb_strimwidth($k['judul'],0,28,'…')) ?></span>
                                 <?php if (!$k['aktif']): ?><i class="icon-eye-off" style="color:var(--abu-muda);font-size:13px"></i><?php endif; ?>
@@ -325,8 +362,18 @@ tinymce.init({
 
                 <div class="grow3">
                     <div class="fg">
-                        <label>Urutan default</label>
-                        <input type="number" name="urutan_default" value="<?= $edit['urutan_default'] ?? 1 ?>" min="1">
+                        <label>Urutan tampil
+                            <span style="font-weight:500;color:var(--abu-muda);font-size:11.5px">
+                                — angka lebih kecil tampil lebih dulu
+                            </span>
+                        </label>
+                        <input type="number" id="input-urutan" name="urutan_default"
+                               value="<?= $edit['urutan_default'] ?? 1 ?>" min="1">
+                        <?php if (!$edit): ?>
+                            <div style="font-size:11.5px;color:var(--abu-muda);margin-top:4px">
+                                Terisi otomatis saat topik dipilih. Ubah hanya jika ingin menyisipkan di posisi tertentu.
+                            </div>
+                        <?php endif; ?>
                     </div>
                     <div class="fg" style="display:flex;align-items:flex-end;padding-bottom:10px">
                         <label class="cbx"><input type="checkbox" name="aktif" <?= ($edit['aktif'] ?? 1) ? 'checked' : '' ?>> Konten aktif</label>
@@ -534,6 +581,9 @@ function submitForm() {
 
 handleTipeChange(document.getElementById('select-tipe')?.value || 'teori');
 
+const URUTAN_NEXT = <?= json_encode($urutan_next) ?>;
+const MODE_EDIT   = <?= $edit ? 'true' : 'false' ?>;
+
 function handleTopikChange(val) {
     document.getElementById('wrap-topik-baru-parent').style.display = 'none';
     document.getElementById('wrap-topik-baru-sub').style.display = 'none';
@@ -543,6 +593,10 @@ function handleTopikChange(val) {
     } else if (val === '__baru_sub__') {
         document.getElementById('wrap-topik-baru-sub').style.display = 'block';
         document.getElementById('select-topik').value = '';
+    } else if (!MODE_EDIT && val) {
+        // Konten baru: isi urutan otomatis = urutan terakhir di topik itu + 1
+        var f = document.getElementById('input-urutan');
+        if (f && URUTAN_NEXT[val]) f.value = URUTAN_NEXT[val];
     }
 }
 
