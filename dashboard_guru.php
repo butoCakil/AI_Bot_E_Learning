@@ -491,9 +491,24 @@ include __DIR__ . '/includes/topbar_guru.php';
     <?php
     // ── Penilaian per siswa (ringkasan kelas + daftar + modal) ──
     require_once __DIR__ . '/includes/syarat_konten.php';
+    require_once __DIR__ . '/includes/feedback.php';
     require_once __DIR__ . '/includes/rekap_tugas.php';
     if (!function_exists('pn_persen')) {
         function pn_persen($a, $b) { return $b > 0 ? (int) round($a / $b * 100) : 0; }
+    }
+    if (!function_exists('pn_badges')) {
+        function pn_badges(array $r): string {
+            $b = function ($cls, $t) { return '<span class="pn-badge ' . $cls . '">' . htmlspecialchars($t) . '</span>'; };
+            if (!$r['profil'])              return $b('pn-w-abu', 'Belum pre-test');
+            if (!$r['tugas_total'])         return $b('pn-w-abu', 'Tidak ada tugas');
+            if ($r['status'] === 'lengkap') return $b('pn-w-teal', 'Lengkap');
+            $h = '';
+            if ($r['perlu_nilai']) $h .= $b('pn-w-amber', $r['perlu_nilai'] . ' perlu dinilai');
+            if ($r['revisi'])      $h .= $b('pn-w-ungu', $r['revisi'] . ' menunggu revisi');
+            if ($r['belum'])       $h .= $b('pn-w-abu', $r['belum'] . ' belum dikumpulkan');
+            if ($r['dinilai'])     $h .= $b('pn-w-teal', $r['dinilai'] . ' dinilai');
+            return $h;
+        }
     }
     $pn_siswa = $pdo->query("SELECT id, nama, nis, kelas FROM users WHERE role = 'siswa' ORDER BY kelas, nama")->fetchAll();
     $pn_rekap = rt_rekap($pn_siswa);
@@ -501,12 +516,13 @@ include __DIR__ . '/includes/topbar_guru.php';
     foreach ($pn_siswa as $s) {
         $r = $pn_rekap[(int) $s['id']];
         foreach ([($s['kelas'] ?: '-'), '__semua'] as $kk) {
-            $a = $pn_kelas[$kk] ?? ['siswa' => 0, 'pretest' => 0, 'm_s' => 0, 'm_t' => 0, 'k' => 0, 't' => 0, 'n' => 0, 'p' => 0];
+            $a = $pn_kelas[$kk] ?? ['siswa' => 0, 'pretest' => 0, 'm_s' => 0, 'm_t' => 0, 'k' => 0, 't' => 0, 'n' => 0, 'p' => 0, 'r' => 0];
             $a['siswa']++;
             if ($r['profil']) $a['pretest']++;
             $a['m_s'] += $r['materi_selesai']; $a['m_t'] += $r['materi_total'];
             $a['k']   += $r['terkumpul'];      $a['t']   += $r['tugas_total'];
             $a['n']   += $r['dinilai'];        $a['p']   += $r['perlu_nilai'];
+            $a['r']   += $r['revisi'];
             $pn_kelas[$kk] = $a;
         }
     }
@@ -515,6 +531,7 @@ include __DIR__ . '/includes/topbar_guru.php';
     ksort($pn_kelas);
     $pn_kelas_awal = array_key_first($pn_kelas);
     $pn_kartu = $pn_semua ? (['Semua kelas' => $pn_semua] + $pn_kelas) : $pn_kelas;
+    $pn_warna = ['perlu_dinilai' => 'pn-w-amber', 'menunggu_revisi' => 'pn-w-ungu', 'belum_lengkap' => 'pn-w-biru', 'lengkap' => 'pn-w-teal'];
     ?>
 
     <div class="pn-ring">
@@ -530,8 +547,11 @@ include __DIR__ . '/includes/topbar_guru.php';
                 <div class="pn-bar"><span>Materi</span><i><em style="width:<?= $pm ?>%"></em></i><b><?= $pm ?>%</b></div>
                 <div class="pn-bar"><span>Pengumpulan</span><i><em style="width:<?= $pk ?>%"></em></i><b><?= $pk ?>%</b></div>
                 <div class="pn-bar"><span>Dinilai</span><i><em style="width:<?= $pd ?>%"></em></i><b><?= $pd ?>%</b></div>
-                <?php if ($a['p'] > 0): ?>
-                    <div style="margin-top:6px"><span class="pn-badge pn-w-amber"><?= $a['p'] ?> perlu dinilai</span></div>
+                <?php if ($a['p'] > 0 || $a['r'] > 0): ?>
+                    <div style="margin-top:6px;display:flex;gap:4px;flex-wrap:wrap">
+                        <?php if ($a['p'] > 0): ?><span class="pn-badge pn-w-amber"><?= $a['p'] ?> perlu dinilai</span><?php endif; ?>
+                        <?php if ($a['r'] > 0): ?><span class="pn-badge pn-w-ungu"><?= $a['r'] ?> menunggu revisi</span><?php endif; ?>
+                    </div>
                 <?php endif; ?>
             </<?= $semua ? 'div' : 'button' ?>>
         <?php endforeach; ?>
@@ -548,9 +568,10 @@ include __DIR__ . '/includes/topbar_guru.php';
             <select id="pn-status">
                 <option value="">Semua status</option>
                 <option value="perlu_dinilai" selected>Perlu dinilai</option>
-                <option value="belum_kumpul">Belum mengumpulkan</option>
-                <option value="belum_lengkap">Tugas belum lengkap</option>
-                <option value="lengkap">Lengkap</option>
+                <option value="menunggu_revisi">Menunggu revisi</option>
+                <option value="belum_kumpul">Ada yang belum dikumpulkan</option>
+                <option value="dinilai">Ada yang sudah dinilai</option>
+                <option value="lengkap">Lengkap semua</option>
                 <option value="belum_pretest">Belum pre-test</option>
             </select>
             <input id="pn-cari" type="search" placeholder="Cari nama atau NIS" style="flex:1;min-width:160px">
@@ -563,16 +584,16 @@ include __DIR__ . '/includes/topbar_guru.php';
                     $uid = (int) $s['id'];
                     $r   = $pn_rekap[$uid];
                     $jn  = $r['dinilai'] + $r['perlu_nilai'];
-                    $wr  = ['perlu_dinilai' => 'pn-w-amber', 'belum_lengkap' => 'pn-w-biru', 'lengkap' => 'pn-w-teal'][$r['status']] ?? 'pn-w-abu';
+                    $wr  = $pn_warna[$r['status']] ?? 'pn-w-abu';
                 ?>
                     <tr class="pn-baris" data-id="<?= $uid ?>" data-kelas="<?= htmlspecialchars($s['kelas'] ?: '-') ?>"
-                        data-status="<?= $r['status'] ?>" data-cari="<?= htmlspecialchars(mb_strtolower($s['nama'] . ' ' . $s['nis'])) ?>"
+                        data-tag="<?= htmlspecialchars(implode(' ', $r['tag'])) ?>" data-cari="<?= htmlspecialchars(mb_strtolower($s['nama'] . ' ' . $s['nis'])) ?>"
                         onclick="pnBuka(<?= $uid ?>)">
                         <td><strong><?= htmlspecialchars($s['nama']) ?></strong><br><small class="pn-muted"><?= htmlspecialchars($s['nis']) ?></small></td>
                         <td id="pn-m-<?= $uid ?>"><?= $r['materi_total'] ? $r['materi_selesai'] . '/' . $r['materi_total'] . ' <small class="pn-muted">(' . pn_persen($r['materi_selesai'], $r['materi_total']) . '%)</small>' : '–' ?></td>
                         <td id="pn-k-<?= $uid ?>"><?= $r['tugas_total'] ? $r['terkumpul'] . '/' . $r['tugas_total'] : '–' ?></td>
                         <td id="pn-n-<?= $uid ?>"><?= $jn ? $r['dinilai'] . '/' . $jn : '–' ?></td>
-                        <td id="pn-s-<?= $uid ?>"><span class="pn-badge <?= $wr ?>"><?= htmlspecialchars($r['label']) ?></span></td>
+                        <td id="pn-s-<?= $uid ?>"><?= pn_badges($r) ?></td>
                     </tr>
                 <?php endforeach; ?>
                 </tbody>
@@ -616,6 +637,8 @@ include __DIR__ . '/includes/topbar_guru.php';
         .pn-badge { display:inline-block; font-size:11.5px; font-weight:700; padding:2px 9px; border-radius:999px; white-space:nowrap; }
         .pn-w-amber { background:#FEF3C7; color:#B45309; } .pn-w-teal { background:#CCFBF1; color:#0F766E; }
         .pn-w-biru { background:#DBEAFE; color:#1D4ED8; }  .pn-w-abu { background:#F1F5F9; color:#475569; }
+        .pn-w-ungu { background:#EDE9FE; color:#6D28D9; }
+        .pn-baris td .pn-badge, .pn-ringkas .pn-badge { margin:2px 4px 2px 0; }
         .pn-muted { color:var(--abu-muda, #94A3B8); font-size:12.5px; }
         .pn-link { color:var(--biru, #2563EB); font-weight:700; }
         .pn-bg { display:none; position:fixed; inset:0; background:rgba(15,23,42,.5); z-index:999; align-items:flex-start; justify-content:center; padding:4vh 12px; overflow-y:auto; }
@@ -632,20 +655,36 @@ include __DIR__ . '/includes/topbar_guru.php';
         .pn-tugas summary { cursor:pointer; font-size:13px; }
         .pn-tugas summary .pn-badge { margin-left:8px; }
         .pn-tugas-isi { margin-top:10px; font-size:13px; }
-        .pn-nilai { display:flex; gap:6px; align-items:center; margin-top:8px; flex-wrap:wrap; }
-        .pn-nilai input { width:84px; padding:6px 8px; border:2px solid var(--garis, #E5E7EB); border-radius:6px; font-family:inherit; }
         .pn-tabel-isi { overflow-x:auto; margin-top:8px; }
         .pn-tabel-isi table { font-size:12.5px; }
         .pn-tabel-isi th, .pn-tabel-isi td { border:1px solid var(--garis, #E5E7EB); padding:5px 8px; text-align:left; }
         .pn-tabel-isi th { background:#EFF6FF; }
+        .pn-fb { margin-top:12px; padding-top:10px; border-top:1px dashed var(--garis, #E5E7EB); }
+        .pn-pred { display:flex; align-items:center; gap:4px; flex-wrap:wrap; margin-bottom:8px; }
+        .pn-star { border:0; background:none; font-size:24px; line-height:1; color:#CBD5E1; cursor:pointer; padding:0 2px; }
+        .pn-star.on { color:#F59E0B; }
+        .pn-pred-lbl { margin-left:8px; font-size:12.5px; font-weight:700; }
+        .pn-pill { border:2px solid var(--garis, #E5E7EB); background:#fff; border-radius:999px; padding:5px 12px; font:inherit; font-size:12.5px; cursor:pointer; }
+        .pn-pill.on { border-color:var(--teal, #0D9488); background:#CCFBF1; color:#0F766E; font-weight:700; }
+        .pn-kom { width:100%; box-sizing:border-box; padding:8px 10px; border:2px solid var(--garis, #E5E7EB); border-radius:8px; font:inherit; font-size:13px; resize:vertical; }
+        .pn-cek { display:flex; align-items:center; gap:6px; font-size:12.5px; margin:6px 0; cursor:pointer; }
+        .pn-aksi { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-top:6px; }
+        .pn-aksi input[type=number] { width:84px; padding:6px 8px; border:2px solid var(--garis, #E5E7EB); border-radius:6px; font-family:inherit; }
+        .pn-catatan { font-size:12.5px; padding:6px 10px; border-radius:8px; margin-bottom:8px; }
+        .pn-cek input:disabled { cursor:not-allowed; }
+        .pn-cek.pn-cek-on { color:#6D28D9; font-weight:700; }
     </style>
 
     <script>
     (function () {
         var LABEL_TUGAS = { belum_kumpul: 'Belum dikumpulkan', sebagian: 'Sebagian', perlu_dinilai: 'Perlu dinilai',
-                            dinilai: 'Dinilai', tanpa_feedback: 'Belum ada feedback' };
-        var WARNA = { perlu_dinilai: 'pn-w-amber', belum_lengkap: 'pn-w-biru', lengkap: 'pn-w-teal',
-                      sebagian: 'pn-w-biru', dinilai: 'pn-w-teal', tanpa_feedback: 'pn-w-biru' };
+                            menunggu_revisi: 'Menunggu revisi', dinilai: 'Dinilai' };
+        var WARNA = { perlu_dinilai: 'pn-w-amber', menunggu_revisi: 'pn-w-ungu', belum_lengkap: 'pn-w-biru',
+                      lengkap: 'pn-w-teal', sebagian: 'pn-w-biru', dinilai: 'pn-w-teal' };
+        var SKALA = {
+            bintang:    ['Perlu diulang', 'Perlu perbaikan', 'Cukup', 'Baik', 'Sangat baik'],
+            kesesuaian: ['Belum sesuai', 'Hampir sesuai', 'Sesuai']
+        };
         var selK = document.getElementById('pn-kelas');
         var selS = document.getElementById('pn-status');
         var cari = document.getElementById('pn-cari');
@@ -663,13 +702,24 @@ include __DIR__ . '/includes/topbar_guru.php';
         function badge(kode, teks) { return el('span', 'pn-badge ' + (WARNA[kode] || 'pn-w-abu'), teks); }
         function fmt(n) { return String(Math.round(n * 10) / 10).replace('.', ','); }
         function persen(a, b) { return b > 0 ? Math.round(a / b * 100) : 0; }
+        function badgesSiswa(r) {
+            if (!r.profil)              return [badge('abu', 'Belum pre-test')];
+            if (!r.tugas_total)         return [badge('abu', 'Tidak ada tugas')];
+            if (r.status === 'lengkap') return [badge('lengkap', 'Lengkap')];
+            var out = [];
+            if (r.perlu_nilai) out.push(badge('perlu_dinilai', r.perlu_nilai + ' perlu dinilai'));
+            if (r.revisi)      out.push(badge('menunggu_revisi', r.revisi + ' menunggu revisi'));
+            if (r.belum)       out.push(badge('abu', r.belum + ' belum dikumpulkan'));
+            if (r.dinilai)     out.push(badge('dinilai', r.dinilai + ' dinilai'));
+            return out;
+        }
         function baris() { return Array.prototype.slice.call(document.querySelectorAll('.pn-baris')); }
         function terlihat() { return baris().filter(function (tr) { return tr.style.display !== 'none'; }); }
 
         function saring() {
             var k = selK.value, st = selS.value, q = cari.value.trim().toLowerCase(), n = 0;
             baris().forEach(function (tr) {
-                var ok = tr.dataset.kelas === k && (!st || tr.dataset.status === st) && (!q || tr.dataset.cari.indexOf(q) >= 0);
+                var ok = tr.dataset.kelas === k && (!st || (' ' + tr.dataset.tag + ' ').indexOf(' ' + st + ' ') >= 0) && (!q || tr.dataset.cari.indexOf(q) >= 0);
                 tr.style.display = ok ? '' : 'none';
                 if (ok) n++;
             });
@@ -729,12 +779,125 @@ include __DIR__ . '/includes/topbar_guru.php';
             var tr = document.querySelector('.pn-baris[data-id="' + id + '"]');
             if (!tr) return;
             var jn = r.dinilai + r.perlu_nilai;
-            tr.dataset.status = r.status;
+            tr.dataset.tag = (r.tag || []).join(' ');
             document.getElementById('pn-k-' + id).textContent = r.tugas_total ? r.terkumpul + '/' + r.tugas_total : '–';
             document.getElementById('pn-n-' + id).textContent = jn ? r.dinilai + '/' + jn : '–';
             var s = document.getElementById('pn-s-' + id);
             s.innerHTML = '';
-            s.appendChild(badge(r.status, r.label));
+            badgesSiswa(r).forEach(function (x) { s.appendChild(x); });
+        }
+
+        function labelTugas(tg) {
+            var fb = tg.feedback;
+            if (tg.status === 'dinilai') {
+                var t = fb ? fb.label : 'Dinilai';
+                if (tg.upload && tg.upload.nilai !== null) t += ' · ' + fmt(tg.upload.nilai);
+                return t;
+            }
+            if (tg.status === 'perlu_dinilai' && fb && fb.revisi_ke > 0) return 'Revisi masuk';
+            return LABEL_TUGAS[tg.status] || tg.status;
+        }
+
+        function formFeedback(tg, uid) {
+            var fb      = tg.feedback;
+            var lbl     = SKALA[tg.skala];
+            var bintang = tg.skala === 'bintang';
+            var pakaiNilai = bintang && !!tg.upload;
+            var pilih   = (fb && fb.skala === tg.skala) ? fb.predikat : 0;
+            var wrap    = el('div', 'pn-fb');
+
+            if (tg.status === 'menunggu_revisi') {
+                wrap.appendChild(el('div', 'pn-catatan pn-w-ungu', 'Menunggu siswa mengirim revisi. Feedback masih bisa diubah.'));
+            } else if (tg.status === 'perlu_dinilai' && fb && fb.revisi_ke > 0) {
+                wrap.appendChild(el('div', 'pn-catatan pn-w-amber', 'Revisi ke-' + fb.revisi_ke + ' masuk — beri penilaian ulang.'));
+            }
+
+            // Baris predikat
+            var pred = el('div', 'pn-pred');
+            var lblEl = el('span', 'pn-pred-lbl');
+            var tombol = [];
+            lbl.forEach(function (teks, i) {
+                var n = i + 1;
+                var t = el('button', bintang ? 'pn-star' : 'pn-pill', bintang ? '★' : teks);
+                t.type = 'button';
+                t.title = teks;
+                t.addEventListener('click', function () { pilih = n; segar(); });
+                tombol.push(t);
+                pred.appendChild(t);
+            });
+            if (bintang) pred.appendChild(lblEl);
+            wrap.appendChild(pred);
+
+            // Detail: muncul setelah predikat dipilih
+            var detail = el('div');
+            var ta = el('textarea', 'pn-kom');
+            ta.rows = 2;
+            ta.maxLength = 1000;
+            ta.value = fb && fb.komentar ? fb.komentar : '';
+            detail.appendChild(ta);
+
+            var lab = el('label', 'pn-cek');
+            var cb = el('input');
+            cb.type = 'checkbox';
+            cb.disabled = true;               // ditentukan predikat, tidak bisa diubah manual
+            var cbTeks = el('span');
+            lab.appendChild(cb);
+            lab.appendChild(cbTeks);
+            detail.appendChild(lab);
+
+            var aksi = el('div', 'pn-aksi');
+            var kNilai = el('span', 'pn-aksi');
+            var inpN = null;
+            if (pakaiNilai) {
+                kNilai.appendChild(el('span', 'pn-muted', 'Nilai'));
+                inpN = el('input');
+                inpN.type = 'number'; inpN.min = '0'; inpN.max = '100'; inpN.step = '0.5'; inpN.placeholder = '0–100';
+                inpN.value = tg.upload.nilai === null ? '' : tg.upload.nilai;
+                kNilai.appendChild(inpN);
+                aksi.appendChild(kNilai);
+            }
+            var btn = el('button', 'btn btn-3 btn-sm', 'Simpan penilaian');
+            btn.type = 'button';
+            var msg = el('small', 'pn-muted');
+            aksi.appendChild(btn);
+            aksi.appendChild(msg);
+            detail.appendChild(aksi);
+            wrap.appendChild(detail);
+
+            function segar() {
+                tombol.forEach(function (t, i) {
+                    var n = i + 1;
+                    t.classList.toggle('on', bintang ? n <= pilih : n === pilih);
+                });
+                lblEl.textContent = pilih ? lbl[pilih - 1] : 'Pilih predikat';
+                detail.style.display = pilih ? '' : 'none';
+                var revisi = pilih > 0 && pilih <= 2;
+                cb.checked = revisi;
+                lab.classList.toggle('pn-cek-on', revisi);
+                cbTeks.textContent = revisi ? 'Minta revisi — kiriman siswa dibuka kembali'
+                                            : 'Tidak perlu revisi — kiriman siswa dikunci';
+                ta.placeholder = revisi ? 'Komentar wajib: jelaskan apa yang harus diperbaiki siswa'
+                                        : 'Komentar untuk siswa (opsional)';
+                if (pakaiNilai) kNilai.style.display = (pilih >= 3) ? '' : 'none';
+                msg.textContent = '';
+            }
+
+            btn.addEventListener('click', function () {
+                var revisi = pilih <= 2;
+                var nilai  = (pakaiNilai && !revisi) ? inpN.value.trim() : '';
+                if (pakaiNilai && !revisi && nilai === '') {
+                    msg.textContent = 'Isi nilai 0–100 dulu';
+                    msg.style.color = 'var(--coral, #DC2626)';
+                    return;
+                }
+                simpanFeedback({
+                    user_id: uid, content_id: tg.content_id, predikat: pilih,
+                    komentar: ta.value.trim(), minta_revisi: revisi ? 1 : 0, nilai: nilai
+                }, btn, msg);
+            });
+
+            segar();
+            return wrap;
         }
 
         function render(d) {
@@ -746,8 +909,7 @@ include __DIR__ . '/includes/topbar_guru.php';
             ringkas.appendChild(el('span', null, 'Materi ' + r.materi_selesai + '/' + r.materi_total + ' (' + persen(r.materi_selesai, r.materi_total) + '%)'));
             ringkas.appendChild(el('span', null, 'Dikumpul ' + r.terkumpul + '/' + r.tugas_total));
             ringkas.appendChild(el('span', null, 'Dinilai ' + r.dinilai + '/' + (r.dinilai + r.perlu_nilai)));
-            ringkas.appendChild(badge(r.status, r.label));
-            if (r.tanpa_feedback > 0) ringkas.appendChild(el('span', 'pn-muted', r.tanpa_feedback + ' tabel belum ada feedback'));
+            badgesSiswa(r).forEach(function (x) { ringkas.appendChild(x); });
 
             isi.innerHTML = '';
             if (!r.profil) { isi.appendChild(el('p', 'pn-muted', 'Siswa ini belum mengerjakan pre-test, jadi belum punya jalur materi.')); return; }
@@ -771,8 +933,7 @@ include __DIR__ . '/includes/topbar_guru.php';
                     var sm = el('summary');
                     sm.appendChild(el('span', null, tg.judul));
                     sm.appendChild(el('small', 'pn-muted', ' (' + tg.tipe + ')'));
-                    var lbl = (tg.status === 'dinilai' && tg.upload) ? 'Nilai ' + fmt(tg.upload.nilai) : (LABEL_TUGAS[tg.status] || tg.status);
-                    sm.appendChild(badge(tg.status, lbl));
+                    sm.appendChild(badge(tg.status, labelTugas(tg)));
                     det.appendChild(sm);
 
                     var body = el('div', 'pn-tugas-isi');
@@ -781,23 +942,11 @@ include __DIR__ . '/includes/topbar_guru.php';
                             var row = el('div');
                             row.appendChild(el('span', 'pn-muted', 'File: '));
                             var a = el('a', 'pn-link', tg.upload.nama);
-                            a.href = tg.upload.url;
+                            a.href = '/lihat_kiriman.php?id=' + tg.upload.id;
                             a.target = '_blank';
                             row.appendChild(a);
                             row.appendChild(el('small', 'pn-muted', ' · ' + tg.upload.waktu));
                             body.appendChild(row);
-
-                            var f = el('div', 'pn-nilai');
-                            var inp = el('input');
-                            inp.type = 'number'; inp.min = '0'; inp.max = '100'; inp.step = '0.5'; inp.placeholder = '0–100';
-                            inp.value = tg.upload.nilai === null ? '' : tg.upload.nilai;
-                            var b = el('button', 'btn btn-3 btn-sm', 'Simpan nilai');
-                            b.type = 'button';
-                            var msg = el('small', 'pn-muted');
-                            b.addEventListener('click', function () { simpanNilai(tg.upload.id, inp, b, msg); });
-                            inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); b.click(); } });
-                            f.appendChild(inp); f.appendChild(b); f.appendChild(msg);
-                            body.appendChild(f);
                         } else {
                             body.appendChild(el('p', 'pn-muted', 'File belum diupload.'));
                         }
@@ -808,13 +957,12 @@ include __DIR__ . '/includes/topbar_guru.php';
                             if (tg.tabel.html) w.innerHTML = tg.tabel.html;
                             else w.appendChild(el('em', 'pn-muted', 'Tabel isian di konten ini sudah diubah/dihapus.'));
                             body.appendChild(w);
-                            var ket = 'Tabel disimpan ' + tg.tabel.waktu + (tg.tabel.lengkap ? '' : ' · belum lengkap');
-                            if (!tg.perlu_upload && tg.tabel.lengkap) ket += ' · belum ada feedback';
-                            body.appendChild(el('small', 'pn-muted', ket));
+                            body.appendChild(el('small', 'pn-muted', 'Tabel disimpan ' + tg.tabel.waktu + (tg.tabel.lengkap ? '' : ' · belum lengkap')));
                         } else {
                             body.appendChild(el('p', 'pn-muted', 'Tabel belum diisi.'));
                         }
                     }
+                    if (tg.upload || tg.tabel) body.appendChild(formFeedback(tg, d.siswa.id));
                     det.appendChild(body);
                     sec.appendChild(det);
                 });
@@ -822,20 +970,18 @@ include __DIR__ . '/includes/topbar_guru.php';
             });
         }
 
-        function simpanNilai(sid, inp, b, msg) {
-            var v = inp.value.trim();
-            if (v === '' || isNaN(Number(v)) || Number(v) < 0 || Number(v) > 100) {
-                msg.textContent = 'Isi nilai 0–100 dulu';
-                msg.style.color = 'var(--coral, #DC2626)';
-                return;
-            }
+        function simpanFeedback(data, b, msg) {
+            function salah(t) { msg.textContent = t; msg.style.color = 'var(--coral, #DC2626)'; }
+            if (!data.predikat) return salah('Pilih predikat dulu');
+            if ((data.predikat <= 2 || data.minta_revisi) && data.komentar === '') return salah('Tulis komentar untuk siswa');
+            if (data.nilai !== '' && (isNaN(Number(data.nilai)) || Number(data.nilai) < 0 || Number(data.nilai) > 100)) return salah('Nilai harus 0–100');
+
             b.disabled = true;
             msg.textContent = 'Menyimpan…';
             msg.style.color = '';
             var fd = new FormData();
-            fd.append('submission_id', sid);
-            fd.append('nilai', v);
-            fetch('/api/simpan_nilai.php', { method: 'POST', body: fd })
+            Object.keys(data).forEach(function (k) { fd.append(k, data[k]); });
+            fetch('/api/simpan_feedback.php', { method: 'POST', body: fd })
                 .then(function (r) { return r.json(); })
                 .then(function (d) {
                     b.disabled = false;
@@ -844,15 +990,10 @@ include __DIR__ . '/includes/topbar_guru.php';
                         msg.style.color = 'var(--teal, #0D9488)';
                         setTimeout(function () { if (aktifId) muat(aktifId); }, 500);
                     } else {
-                        msg.textContent = d.msg || 'Gagal menyimpan';
-                        msg.style.color = 'var(--coral, #DC2626)';
+                        salah(d.msg || 'Gagal menyimpan');
                     }
                 })
-                .catch(function () {
-                    b.disabled = false;
-                    msg.textContent = 'Koneksi gagal, coba lagi.';
-                    msg.style.color = 'var(--coral, #DC2626)';
-                });
+                .catch(function () { b.disabled = false; salah('Koneksi gagal, coba lagi.'); });
         }
 
         saring();
