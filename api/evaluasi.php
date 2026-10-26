@@ -54,6 +54,15 @@ if (!$konten) {
 }
 
 $content_id = (int) $konten['id'];
+
+// Evaluasi hanya boleh dikirim satu kali (tidak ada pengulangan)
+$stmt_cek = $pdo->prepare("SELECT 1 FROM evaluasi_results WHERE user_id = ? AND content_id = ? LIMIT 1");
+$stmt_cek->execute([$user_id, $content_id]);
+if ($stmt_cek->fetchColumn()) {
+    $_SESSION['flash_gate'] = 'Evaluasi ini sudah pernah kamu kirim dan tidak bisa diulang.';
+    header('Location: /materi.php?topik=' . urlencode($topik) . '&konten=' . $content_id);
+    exit;
+}
 $soal_list  = json_decode($konten['isi'], true) ?? [];
 
 if (empty($soal_list)) {
@@ -119,10 +128,8 @@ log_aktivitas($user_id, 'jawab_quiz', $content_id, $topik, [
     'profil_gabungan' => $profil_gabungan,
 ]);
 
-log_aktivitas($user_id, 'selesai_materi', $content_id, $topik);
-
 // Konten evaluasi tidak melewati /api/selesai_materi.php,
-// jadi tandai selesai di sini agar ikut terhitung progress.
+// jadi tandai selesai di sini agar ikut terhitung progress (cukup sekali).
 log_aktivitas($user_id, 'selesai_materi', $content_id, $topik);
 
 header('Location: /hasil_evaluasi.php?konten=' . $content_id);

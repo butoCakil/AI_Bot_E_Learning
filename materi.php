@@ -2,6 +2,7 @@
 session_start();
 require_once 'config/config.php';
 require_once 'includes/functions.php';
+require_once 'includes/syarat_konten.php';
 
 require_login();
 
@@ -115,6 +116,13 @@ if ($konten_aktif) {
     ]);
 }
 
+// ── Syarat tuntas konten aktif (timer, evaluasi, upload, tabel) ──
+// Dihitung di server; selesai_materi dicatat otomatis bila semua terpenuhi.
+$syarat = ['selesai' => false, 'semua_ok' => true, 'item' => []];
+if ($konten_aktif) {
+    $syarat = tandai_selesai_jika_lengkap((int) $user_id, $konten_aktif, $topik_aktif);
+}
+
 // Hitung progress topik ini
 $total_konten = count($konten_list);
 $konten_no = 0;
@@ -165,36 +173,44 @@ $stmt_done = $pdo->prepare("
 $stmt_done->execute([$user_id]);
 $evaluasi_selesai = array_column($stmt_done->fetchAll(), 'content_id');
 
-// Timer: aktif jika konten biasa dan belum pernah diselesaikan
-$pakai_timer = false;
-if ($konten_aktif && !$is_evaluasi) {
-    $pakai_timer = !in_array($konten_id_aktif, $konten_dibuka);
-}
+// ── Data tampilan syarat ─────────────────────────────────────────
+$durasi_timer = DURASI_BACA;
+$sisa_timer   = (int) ($syarat['item']['timer']['sisa'] ?? 0);
+$perlu_upload = isset($syarat['item']['upload']);
+$ada_tabel    = isset($syarat['item']['tabel']);
 
-// Evaluasi yang belum dikerjakan → tombol "Selanjutnya" dicegat modal
-$evaluasi_belum = $is_evaluasi
-    && !in_array((int) $konten_id_aktif, array_map('intval', $evaluasi_selesai), true);
-$durasi_timer = 35;
-
-// Cek jobsheet submission
-$is_jobsheet = $konten_aktif && $konten_aktif['tipe'] === 'jobsheet' && $konten_aktif['perlu_upload'];
-$jobsheet_uploaded = false;
-// Jobsheet wajib yang belum diunggah: tombol boleh terbuka, tapi belum dihitung tuntas
-$tunda_selesai = $is_jobsheet && !$jobsheet_uploaded;
-if ($is_jobsheet) {
+// Upload (berlaku untuk tipe apa pun bila perlu_upload dicentang)
+$jobsheet_submission = null;
+if ($perlu_upload) {
     $stmt_js = $pdo->prepare("SELECT id, file_original_name, nilai FROM jobsheet_submissions WHERE user_id = ? AND content_id = ?");
     $stmt_js->execute([$user_id, $konten_id_aktif]);
-    $jobsheet_submission = $stmt_js->fetch();
-    $jobsheet_uploaded   = (bool) $jobsheet_submission;
+    $jobsheet_submission = $stmt_js->fetch() ?: null;
 }
+$jobsheet_uploaded = (bool) $jobsheet_submission;
+
+// Isian tabel yang sudah tersimpan
+$jawaban_tabel = [];
+if ($ada_tabel) {
+    $jawaban_tabel = ti_ambil_jawaban((int) $user_id, (int) $konten_id_aktif)['jawaban'] ?? [];
+}
+
+// Evaluasi yang sudah dikirim → tampilkan jawaban, form dikunci
+$hasil_eval = null;
+if ($is_evaluasi) {
+    $stmt_he = $pdo->prepare("SELECT hasil_soal, skor, total, persentase, created_at FROM evaluasi_results WHERE user_id = ? AND content_id = ? LIMIT 1");
+    $stmt_he->execute([$user_id, $konten_id_aktif]);
+    $hasil_eval = $stmt_he->fetch() ?: null;
+    if ($hasil_eval) {
+        $hasil_eval['hasil_soal'] = json_decode($hasil_eval['hasil_soal'], true) ?: [];
+    }
+}
+
+$jsf = JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE;
 
 // Topik berikutnya
 $topik_keys = array_keys($topik_list);
 $topik_idx  = array_search($topik_aktif, $topik_keys);
 $next_topik = $topik_keys[$topik_idx + 1] ?? null;
-
-// DEBUG sementara
-error_log('DEBUG next: aktif=' . $topik_aktif . ' idx=' . var_export($topik_idx, true) . ' next=' . var_export($next_topik, true));
 
 $page_title   = ($konten_aktif['judul'] ?? 'Materi') . ' — AdaptLearn PRE';
 $topbar_aktif = 'materi';
@@ -336,9 +352,53 @@ include __DIR__ . '/includes/topbar_siswa.php';
 
                 <h1 class="judul-konten"><?= htmlspecialchars($konten_aktif['judul']) ?></h1>
 
-                <?php if ($is_evaluasi && $soal_evaluasi): ?>
+                <?php if ($is_evaluasi && $hasil_eval): ?>
 
-                    <form method="POST" action="api/evaluasi.php">
+                    <!-- Evaluasi sudah dikirim: tampilkan jawaban, tidak bisa diulang -->
+                    <div style="background:var(--teal-muda);border-radius:var(--r-md);padding:14px 16px;margin-bottom:18px">
+                        <div style="font-size:13.5px;font-weight:800;display:flex;align-items:center;gap:7px">
+                            <i class="icon-circle-check" style="color:var(--teal)"></i> Evaluasi sudah kamu kirim
+                        </div>
+                        <div style="font-size:12.5px;color:var(--abu);margin-top:6px;line-height:1.6">
+                            Dikirim <?= htmlspecialchars(date('d-m-Y H:i', strtotime($hasil_eval['created_at']))) ?> ·
+                            Skor <b><?= (int) $hasil_eval['skor'] ?>/<?= (int) $hasil_eval['total'] ?></b>
+                            (<?= (int) $hasil_eval['persentase'] ?>%).
+                            Evaluasi hanya bisa dikerjakan satu kali.
+                        </div>
+                        <a href="hasil_evaluasi.php?konten=<?= (int) $konten_id_aktif ?>"
+                           style="display:inline-block;margin-top:8px;color:var(--biru);font-size:12.5px;font-weight:700;text-decoration:none">
+                            Lihat halaman hasil evaluasi <i class="icon-arrow-right"></i>
+                        </a>
+                    </div>
+
+                    <?php foreach ($hasil_eval['hasil_soal'] as $i => $hs): ?>
+                        <div class="soal">
+                            <div class="soal-tx">
+                                <?= ($i + 1) ?>. <?= htmlspecialchars($hs['soal'] ?? '') ?>
+                                <?php if (!empty($hs['benar'])): ?>
+                                    <span class="tag ok" style="margin-left:6px"><i class="icon-circle-check"></i> Benar</span>
+                                <?php else: ?>
+                                    <span class="tag" style="margin-left:6px;background:#FEE2E2;color:#B91C1C"><i class="icon-circle-alert"></i> Salah</span>
+                                <?php endif; ?>
+                            </div>
+                            <ul class="opsi">
+                                <?php foreach (($hs['opsi'] ?? []) as $huruf => $teks):
+                                    $dipilih = (string) ($hs['jawaban'] ?? '') === (string) $huruf; ?>
+                                    <li>
+                                        <label style="cursor:default;<?= $dipilih ? 'background:var(--biru-muda);border-color:var(--biru)' : 'opacity:.65' ?>">
+                                            <input type="radio" disabled <?= $dipilih ? 'checked' : '' ?>>
+                                            <span><b><?= htmlspecialchars($huruf) ?>.</b> <?= htmlspecialchars($teks) ?><?= $dipilih ? ' <i style="color:var(--biru)">— jawabanmu</i>' : '' ?></span>
+                                        </label>
+                                    </li>
+                                <?php endforeach; ?>
+                            </ul>
+                        </div>
+                    <?php endforeach; ?>
+
+                <?php elseif ($is_evaluasi && $soal_evaluasi): ?>
+
+                    <form method="POST" action="api/evaluasi.php"
+                          onsubmit="var b=this.querySelector('button[type=submit]'); b.disabled=true; b.innerHTML='Mengirim…';">
                         <input type="hidden" name="user_id"         value="<?= $user_id ?>">
                         <input type="hidden" name="content_id"      value="<?= $konten_id_aktif ?>">
                         <input type="hidden" name="topik"           value="<?= htmlspecialchars($topik_aktif) ?>">
@@ -360,6 +420,9 @@ include __DIR__ . '/includes/topbar_siswa.php';
                             </div>
                         <?php endforeach; ?>
 
+                        <p style="font-size:12px;color:var(--abu-muda);margin:4px 0 10px">
+                            Jawab semua soal. Evaluasi hanya bisa dikirim <b>satu kali</b>.
+                        </p>
                         <button type="submit" class="btn btn-1 btn-full">
                             <i class="icon-send"></i> Kirim jawaban
                         </button>
@@ -387,11 +450,21 @@ include __DIR__ . '/includes/topbar_siswa.php';
                         <?php endif; ?>
                     </div>
 
-                    <?php if ($is_jobsheet): ?>
+                    <?php if ($ada_tabel): ?>
+                        <div class="rata" style="margin-top:14px;flex-wrap:wrap;gap:10px">
+                            <button type="button" class="btn btn-1 btn-sm" id="ti-simpan">
+                                <i class="icon-check"></i> Simpan isian tabel
+                            </button>
+                            <span id="ti-status" style="font-size:12.5px;font-weight:600;color:var(--abu)"></span>
+                        </div>
+                    <?php endif; ?>
+
+                    <?php if ($perlu_upload): ?>
                         <div id="upload-box" style="background:var(--biru-muda);border:2px dashed var(--biru-200);
                                                     border-radius:var(--r-md);padding:18px;margin-top:22px">
                             <div style="font-size:13.5px;font-weight:800;margin-bottom:10px;display:flex;align-items:center;gap:7px">
-                                <i class="icon-upload" style="color:var(--biru)"></i> Upload hasil pengukuran
+                                <i class="icon-upload" style="color:var(--biru)"></i>
+                                <?= $konten_aktif['tipe'] === 'jobsheet' ? 'Upload hasil pengukuran' : 'Upload hasil kerja' ?>
                             </div>
 
                             <?php if ($jobsheet_uploaded): ?>
@@ -405,7 +478,7 @@ include __DIR__ . '/includes/topbar_siswa.php';
                             <?php else: ?>
                                 <div class="tags" id="upload-status">
                                     <span class="tag" style="background:var(--amber-muda);color:#B45309">
-                                        <i class="icon-triangle-alert"></i> Belum upload — jobsheet belum selesai
+                                        <i class="icon-triangle-alert"></i> Belum upload — materi ini belum tuntas
                                     </span>
                                 </div>
                             <?php endif; ?>
@@ -426,6 +499,11 @@ include __DIR__ . '/includes/topbar_siswa.php';
 
                 <?php endif; ?>
             </div>
+
+            <?php if (!empty($syarat['item']) && !$syarat['semua_ok']): ?>
+                <!-- Penanda syarat (diisi JS) -->
+                <div id="syarat-box" style="display:flex;flex-wrap:wrap;gap:8px;margin:14px 2px 0"></div>
+            <?php endif; ?>
 
             <!-- Navigasi prev/next -->
             <div class="nav-btn">
@@ -451,22 +529,17 @@ include __DIR__ . '/includes/topbar_siswa.php';
                     $label_next = 'Selesai semua materi';
                     $kelas_next = 'btn-3';
                 }
+                $boleh_lanjut = $syarat['semua_ok'];
                 ?>
 
-                <?php if ($pakai_timer): ?>
-                    <a href="<?= $href_next ?>" class="btn btn-off" id="btn-next"
-                       data-href="<?= $href_next ?>"
-                       data-label="<?= htmlspecialchars($label_next) ?>"
-                       data-kelas="<?= $kelas_next ?>"
-                       onclick="return klikNextTimer(event)">
-                        <span id="btn-next-tx"><?= htmlspecialchars($label_next) ?> (<?= $durasi_timer ?>s)</span>
-                    </a>
-                <?php else: ?>
-                    <a href="<?= $href_next ?>" class="btn <?= $kelas_next ?>"
-                       <?= $evaluasi_belum ? 'onclick="bukaModalEvaluasi(); return false;"' : '' ?>>
-                        <?= htmlspecialchars($label_next) ?> <i class="icon-arrow-right"></i>
-                    </a>
-                <?php endif; ?>
+                <!-- Terkunci = href "#": tidak bisa lolos walau JS gagal -->
+                <a href="<?= $boleh_lanjut ? htmlspecialchars($href_next) : '#' ?>" id="btn-next"
+                   class="btn <?= $boleh_lanjut ? $kelas_next : 'btn-off' ?>"
+                   aria-disabled="<?= $boleh_lanjut ? 'false' : 'true' ?>"
+                   onclick="return klikNext(event)">
+                    <span id="btn-next-tx"><?= htmlspecialchars($label_next) ?><?= (!$boleh_lanjut && $sisa_timer > 0) ? ' (' . $sisa_timer . 's)' : '' ?></span>
+                    <i class="icon-arrow-right"></i>
+                </a>
             </div>
 
         <?php else: ?>
@@ -488,7 +561,204 @@ include __DIR__ . '/includes/topbar_siswa.php';
 
 </div>
 
-<?php if ($is_jobsheet): ?>
+<?php if ($konten_aktif && !$is_finish): ?>
+
+<style>
+    .isi table.tabel-input td.ti-isi, .isi table.tabel-input th.ti-isi { padding: 4px 6px; }
+    .ti-in {
+        width: 100%; min-width: 70px; padding: 7px 9px; font: inherit; font-size: 13px;
+        border: 1.5px solid var(--biru-200); border-radius: 8px; background: #fff;
+    }
+    .ti-in:focus { outline: none; border-color: var(--biru); }
+</style>
+
+<div id="modalSyarat" class="modal-bg" onclick="if(event.target===this) tutupModalSyarat()">
+    <div class="modal-kotak">
+        <div class="modal-ikon"><i class="icon-lock"></i></div>
+        <h3>Belum bisa lanjut</h3>
+        <p>Selesaikan dulu:</p>
+        <ul id="modal-syarat-daftar" style="text-align:left;margin:8px 0 16px 20px;font-size:13.5px;line-height:1.8"></ul>
+        <button type="button" class="btn btn-1" onclick="tutupModalSyarat()">Mengerti</button>
+    </div>
+</div>
+
+<script>
+(function () {
+    var SYARAT = <?= json_encode((object) $syarat['item'], $jsf) ?>;
+    var CID    = <?= (int) $konten_id_aktif ?>;
+    var TOPIK  = <?= json_encode($topik_aktif, $jsf) ?>;
+    var LABEL  = <?= json_encode($label_next, $jsf) ?>;
+    var HREF   = <?= json_encode($href_next, $jsf) ?>;
+    var KELAS  = <?= json_encode($kelas_next, $jsf) ?>;
+    var IKON   = { timer: 'icon-hourglass', evaluasi: 'icon-clipboard-list', upload: 'icon-upload', tabel: 'icon-clipboard-check' };
+
+    var btn   = document.getElementById('btn-next');
+    var btnTx = document.getElementById('btn-next-tx');
+    var box   = document.getElementById('syarat-box');
+
+    function semuaOk() {
+        for (var k in SYARAT) { if (!SYARAT[k].ok) return false; }
+        return true;
+    }
+    function teks(k, it) {
+        if (k === 'timer' && !it.ok) return 'Baca materi (' + it.sisa + ' detik lagi)';
+        if (k === 'tabel' && !it.ok) return 'Isi tabel (' + it.kosong + ' sel kosong)';
+        return it.label;
+    }
+    function render() {
+        var ok = semuaOk();
+        if (box) {
+            var h = '';
+            for (var k in SYARAT) {
+                var it = SYARAT[k];
+                h += '<span class="tag' + (it.ok ? ' ok' : '') + '"'
+                   + (it.ok ? '' : ' style="background:var(--amber-muda);color:#B45309"') + '>'
+                   + '<i class="' + (it.ok ? 'icon-circle-check' : (IKON[k] || 'icon-circle-alert')) + '"></i> '
+                   + teks(k, it) + '</span>';
+            }
+            box.innerHTML = h;
+        }
+        if (!btn) return;
+        if (ok) {
+            btn.setAttribute('href', HREF);
+            btn.className = 'btn ' + KELAS;
+            btn.setAttribute('aria-disabled', 'false');
+            btnTx.textContent = LABEL;
+        } else {
+            btn.setAttribute('href', '#');
+            btn.className = 'btn btn-off';
+            btn.setAttribute('aria-disabled', 'true');
+            btnTx.textContent = (SYARAT.timer && !SYARAT.timer.ok) ? LABEL + ' (' + SYARAT.timer.sisa + 's)' : LABEL;
+        }
+    }
+
+    window.terapkanSyarat = function (item) {
+        if (item) { SYARAT = item; render(); jalankanTimer(); }
+    };
+    window.klikNext = function (e) {
+        if (semuaOk()) return true;
+        e.preventDefault();
+        var daftar = '';
+        for (var k in SYARAT) { if (!SYARAT[k].ok) daftar += '<li>' + teks(k, SYARAT[k]) + '</li>'; }
+        document.getElementById('modal-syarat-daftar').innerHTML = daftar;
+        document.getElementById('modalSyarat').classList.add('on');
+        return false;
+    };
+    window.tutupModalSyarat = function () {
+        document.getElementById('modalSyarat').classList.remove('on');
+    };
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') tutupModalSyarat();
+    });
+
+    // ── Timer baca (hitungan tampilan; keputusan tetap di server) ──
+    var ivTimer = null;
+    function laporSelesai() {
+        var fd = new FormData();
+        fd.append('content_id', CID);
+        fd.append('topik', TOPIK);
+        fetch('/api/selesai_materi.php', { method: 'POST', body: fd })
+            .then(function (r) { return r.json(); })
+            .then(function (d) { if (d.ok) terapkanSyarat(d.item); })
+            .catch(function () { setTimeout(laporSelesai, 3000); });
+    }
+    function jalankanTimer() {
+        if (ivTimer || !SYARAT.timer || SYARAT.timer.ok) return;
+        ivTimer = setInterval(function () {
+            SYARAT.timer.sisa--;
+            if (SYARAT.timer.sisa <= 0) {
+                clearInterval(ivTimer);
+                ivTimer = null;
+                SYARAT.timer.sisa = 0;
+                laporSelesai();
+            } else {
+                render();
+            }
+        }, 1000);
+    }
+
+    // ── Tabel input: sel .ti-isi → kotak isian ──
+    var tables = document.querySelectorAll('.isi table.tabel-input');
+    if (tables.length) {
+        var SIMPAN = <?= json_encode((object) $jawaban_tabel, $jsf) ?>;
+        var inputs = [];
+        Array.prototype.forEach.call(tables, function (tb, ti) {
+            Array.prototype.forEach.call(tb.querySelectorAll('tr'), function (tr, ri) {
+                var ci = 0;
+                Array.prototype.forEach.call(tr.children, function (cell) {
+                    if (cell.tagName !== 'TD' && cell.tagName !== 'TH') return;
+                    if (cell.classList.contains('ti-isi')) {
+                        var key = 't' + ti + '-r' + ri + '-c' + ci;
+                        var ph  = cell.textContent.replace(/\u00a0/g, ' ').trim();
+                        var inp = document.createElement('input');
+                        inp.type = 'text';
+                        inp.className = 'ti-in';
+                        inp.maxLength = 200;
+                        inp.setAttribute('data-key', key);
+                        inp.placeholder = ph || 'isi di sini';
+                        inp.value = SIMPAN[key] || '';
+                        cell.textContent = '';
+                        cell.appendChild(inp);
+                        inputs.push(inp);
+                    }
+                    ci++;
+                });
+            });
+        });
+
+        var stat = document.getElementById('ti-status');
+        var tSimpan = null, kotor = false;
+        function tulis(t, warna) {
+            if (stat) { stat.textContent = t; stat.style.color = warna || 'var(--abu)'; }
+        }
+        function jumlahKosong() {
+            var n = 0;
+            inputs.forEach(function (i) { if (i.value.trim() === '') n++; });
+            return n;
+        }
+        function simpan() {
+            clearTimeout(tSimpan);
+            var data = {};
+            inputs.forEach(function (i) { data[i.getAttribute('data-key')] = i.value; });
+            var fd = new FormData();
+            fd.append('content_id', CID);
+            fd.append('topik', TOPIK);
+            fd.append('jawaban', JSON.stringify(data));
+            tulis('Menyimpan…');
+            fetch('/api/simpan_tabel.php', { method: 'POST', body: fd })
+                .then(function (r) { return r.json(); })
+                .then(function (d) {
+                    if (d.ok) {
+                        kotor = false;
+                        tulis(d.lengkap ? 'Tersimpan — semua sel terisi' : 'Tersimpan — ' + d.kosong + ' sel masih kosong',
+                              d.lengkap ? 'var(--teal)' : '#B45309');
+                        terapkanSyarat(d.item);
+                    } else {
+                        tulis(d.msg || 'Gagal menyimpan', 'var(--coral)');
+                    }
+                })
+                .catch(function () { tulis('Koneksi gagal, coba lagi.', 'var(--coral)'); });
+        }
+        inputs.forEach(function (i) {
+            i.addEventListener('input', function () { kotor = true; tulis('Belum disimpan…', '#B45309'); });
+            i.addEventListener('change', function () { clearTimeout(tSimpan); tSimpan = setTimeout(simpan, 400); });
+        });
+        var bs = document.getElementById('ti-simpan');
+        if (bs) bs.addEventListener('click', simpan);
+        window.addEventListener('beforeunload', function (e) {
+            if (kotor) { e.preventDefault(); e.returnValue = ''; }
+        });
+        var awal = jumlahKosong();
+        tulis(awal === 0 ? 'Semua sel sudah terisi' : awal + ' sel belum diisi',
+              awal === 0 ? 'var(--teal)' : 'var(--abu)');
+    }
+
+    render();
+    jalankanTimer();
+})();
+</script>
+
+<?php if ($perlu_upload): ?>
 <script>
 function uploadJobsheet() {
     var fileInput = document.getElementById('file-jobsheet');
@@ -503,18 +773,24 @@ function uploadJobsheet() {
 
     var fd = new FormData();
     fd.append('file', file);
-    fd.append('content_id', <?= $konten_id_aktif ?>);
-    fd.append('topik', '<?= htmlspecialchars($topik_aktif, ENT_QUOTES) ?>');
+    fd.append('content_id', <?= (int) $konten_id_aktif ?>);
+    fd.append('topik', <?= json_encode($topik_aktif, $jsf) ?>);
 
     fetch('/api/upload_jobsheet.php', { method: 'POST', body: fd })
-        .then(function(r) { return r.json(); })
-        .then(function(data) {
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
             if (data.ok) {
-                document.getElementById('upload-status').innerHTML =
-                    '<span class="tag ok"><i class="icon-circle-check"></i> ' + data.filename + '</span>';
+                var span = document.createElement('span');
+                span.className = 'tag ok';
+                span.innerHTML = '<i class="icon-circle-check"></i> ';
+                span.appendChild(document.createTextNode(data.filename));
+                var st = document.getElementById('upload-status');
+                st.innerHTML = '';
+                st.appendChild(span);
                 msg.style.color = 'var(--teal)';
                 msg.textContent = 'Upload berhasil.';
                 btn.innerHTML = '<i class="icon-check"></i> Terupload';
+                if (window.terapkanSyarat) terapkanSyarat(data.item);
             } else {
                 msg.style.color = 'var(--coral)';
                 msg.textContent = data.msg || 'Upload gagal.';
@@ -522,7 +798,7 @@ function uploadJobsheet() {
                 btn.innerHTML = '<i class="icon-upload"></i> Upload sekarang';
             }
         })
-        .catch(function() {
+        .catch(function () {
             msg.style.color = 'var(--coral)';
             msg.textContent = 'Koneksi gagal, coba lagi.';
             btn.disabled = false;
@@ -530,7 +806,7 @@ function uploadJobsheet() {
         });
 }
 
-document.getElementById('file-jobsheet').addEventListener('change', function() {
+document.getElementById('file-jobsheet').addEventListener('change', function () {
     if (this.files[0]) {
         document.getElementById('file-label').textContent = this.files[0].name;
         document.getElementById('btn-upload').style.display = 'inline-flex';
@@ -539,118 +815,6 @@ document.getElementById('file-jobsheet').addEventListener('change', function() {
 </script>
 <?php endif; ?>
 
-<?php if ($pakai_timer): ?>
-<script>
-var timerSelesai = false;
-var timerHref    = '';
-
-function klikNextTimer(e) {
-    if (timerSelesai) return true;          // sudah boleh lanjut, navigasi normal
-    e.preventDefault();
-    document.getElementById('modalTimer').classList.add('on');
-    return false;
-}
-function tutupModalTimer() {
-    document.getElementById('modalTimer').classList.remove('on');
-}
-function lanjutDariModal() {
-    if (timerSelesai && timerHref) window.location.href = timerHref;
-}
-
-(function() {
-    var btn = document.getElementById('btn-next');
-    if (!btn) return;
-
-    var tx        = document.getElementById('btn-next-tx');
-    var sisa      = <?= $durasi_timer ?>;
-    var href      = btn.getAttribute('data-href');
-    var label     = btn.getAttribute('data-label');
-    var kelas     = btn.getAttribute('data-kelas');
-    var contentId = <?= $konten_id_aktif ?>;
-    var topik     = '<?= htmlspecialchars($topik_aktif, ENT_QUOTES) ?>';
-
-    timerHref = href;
-
-    var interval = setInterval(function() {
-        var mSisa  = document.getElementById('modal-timer-sisa');
-        var mTubuh = document.getElementById('modal-timer-tubuh');
-        var mJudul = document.getElementById('modal-timer-judul');
-        var mIkon  = document.getElementById('modal-timer-ikon');
-        var mBtn   = document.getElementById('modal-timer-btn');
-
-        sisa--;
-        if (sisa <= 0) {
-            clearInterval(interval);
-            timerSelesai = true;
-
-            if (!<?= $tunda_selesai ? 'true' : 'false' ?>) {
-                var fd = new FormData();
-                fd.append('content_id', contentId);
-                fd.append('topik', topik);
-                fetch('/api/selesai_materi.php', { method: 'POST', body: fd });
-            }
-
-            tx.innerHTML = label + ' <i class="icon-arrow-right"></i>';
-            btn.classList.remove('btn-off');
-            btn.classList.add(kelas);
-
-            // Modal berubah jadi ajakan lanjut (walau sedang terbuka)
-            if (mJudul) mJudul.textContent = 'Materi ini sudah selesai';
-            if (mTubuh) mTubuh.innerH            if (mTubuh) mTubuh.innerHTML = <?= $tunda_selesai
-                ? "'Kamu boleh lanjut ke materi berikutnya. Namun jobsheet ini baru dihitung tuntas setelah kamu mengunggah hasil kerjamu.'"
-                : "'Kamu sudah membaca cukup lama. Silakan lanjut ke materi berikutnya.'" ?>;TML = 'Kamu sudah membaca cukup lama. Silakan lanjut ke materi berikutnya.';
-            if (mIkon)  mIkon.className = 'modal-ikon hijau';
-            if (mBtn) {
-                mBtn.textContent = 'Lanjut sekarang';
-                mBtn.setAttribute('onclick', 'lanjutDariModal()');
-            }
-        } else {
-            tx.textContent = label + ' (' + sisa + 's)';
-            if (mSisa) mSisa.textContent = sisa;
-        }
-    }, 1000);
-})();
-</script>
-<?php endif; ?>
-
-<?php if ($pakai_timer): ?>
-<div id="modalTimer" class="modal-bg" onclick="if(event.target===this) tutupModalTimer()">
-    <div class="modal-kotak">
-        <div class="modal-ikon" id="modal-timer-ikon"><i class="icon-hourglass"></i></div>
-        <h3 id="modal-timer-judul">Baca materinya dulu ya</h3>
-        <p id="modal-timer-tubuh">
-            Tombol lanjut akan aktif dalam <b id="modal-timer-sisa"><?= $durasi_timer ?></b> detik.
-            Gunakan waktu ini untuk membaca materi di halaman ini.
-        </p>
-        <button type="button" class="btn btn-1" id="modal-timer-btn" onclick="tutupModalTimer()">Mengerti</button>
-    </div>
-</div>
-<?php endif; ?>
-
-<?php if ($evaluasi_belum): ?>
-<div id="modalEvaluasi" class="modal-bg" onclick="if(event.target===this) tutupModalEvaluasi()">
-    <div class="modal-kotak">
-        <div class="modal-ikon"><i class="icon-clipboard-list"></i></div>
-        <h3>Selesaikan evaluasi dulu</h3>
-        <p>
-            Jawab semua soal di halaman ini, lalu tekan <b>Kirim jawaban</b>.
-            Materi berikutnya akan terbuka setelah evaluasi kamu tersimpan.
-        </p>
-        <button type="button" class="btn btn-1" onclick="tutupModalEvaluasi()">Mengerti</button>
-    </div>
-</div>
-
-<script>
-function bukaModalEvaluasi() {
-    document.getElementById('modalEvaluasi').classList.add('on');
-}
-function tutupModalEvaluasi() {
-    document.getElementById('modalEvaluasi').classList.remove('on');
-}
-document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape') tutupModalEvaluasi();
-});
-</script>
 <?php endif; ?>
 
 <?php include __DIR__ . '/includes/bottomnav_siswa.php'; ?>

@@ -199,12 +199,90 @@ function toggleGroup(el) {
 tinymce.init({
     selector: '#editor-isi',
     plugins: 'lists table link image code',
-    toolbar: 'undo redo | formatselect | bold italic underline | alignleft aligncenter alignright | bullist numlist | table | link image | code',
+    toolbar: 'undo redo | formatselect | bold italic underline | alignleft aligncenter alignright | bullist numlist | table tabelinput selisian | link image | code',
     height: 400,
     language: 'id',
-    content_style: "body { font-family: 'Plus Jakarta Sans', sans-serif; font-size: 14px; line-height: 1.7; }",
+    content_style: "body { font-family: 'Plus Jakarta Sans', sans-serif; font-size: 14px; line-height: 1.7; } " +
+                   "table.tabel-input { outline: 2px solid #BFDBFE; } " +
+                   "td.ti-isi, th.ti-isi { background: #EFF6FF; color: #64748B; font-style: italic; }",
     table_default_attributes: { border: '1' },
     table_default_styles: { 'border-collapse': 'collapse', 'width': '100%' },
+    setup: function (editor) {
+        // Sisipkan tabel isian siswa baru
+        editor.ui.registry.addButton('tabelinput', {
+            text: 'Tabel Input',
+            tooltip: 'Sisipkan tabel yang diisi siswa',
+            onAction: function () {
+                editor.windowManager.open({
+                    title: 'Sisipkan Tabel Input',
+                    body: { type: 'panel', items: [
+                        { type: 'input',    name: 'baris', label: 'Jumlah baris isian (di luar baris judul)' },
+                        { type: 'input',    name: 'kolom', label: 'Jumlah kolom' },
+                        { type: 'checkbox', name: 'label', label: 'Kolom pertama berisi label (tidak diisi siswa)' }
+                    ]},
+                    initialData: { baris: '2', kolom: '4', label: true },
+                    buttons: [
+                        { type: 'cancel', text: 'Batal' },
+                        { type: 'submit', text: 'Sisipkan', primary: true }
+                    ],
+                    onSubmit: function (api) {
+                        var d = api.getData();
+                        var b = Math.min(Math.max(parseInt(d.baris, 10) || 0, 1), 30);
+                        var k = Math.min(Math.max(parseInt(d.kolom, 10) || 0, 1), 12);
+                        var h = '<table class="tabel-input" border="1" style="border-collapse:collapse;width:100%"><thead><tr>';
+                        for (var c = 0; c < k; c++) h += '<th>Judul kolom ' + (c + 1) + '</th>';
+                        h += '</tr></thead><tbody>';
+                        for (var r = 0; r < b; r++) {
+                            h += '<tr>';
+                            for (var c2 = 0; c2 < k; c2++) {
+                                h += (d.label && c2 === 0) ? '<td>Baris ' + (r + 1) + '</td>' : '<td class="ti-isi">&nbsp;</td>';
+                            }
+                            h += '</tr>';
+                        }
+                        h += '</tbody></table><p>&nbsp;</p>';
+                        editor.insertContent(h);
+                        api.close();
+                    }
+                });
+            }
+        });
+
+        // Jadikan / batalkan sel terpilih sebagai isian siswa (untuk tabel lama juga)
+        editor.ui.registry.addButton('selisian', {
+            text: 'Sel Isian',
+            tooltip: 'Jadikan/batalkan sel terpilih sebagai isian siswa',
+            onAction: function () {
+                var sel = editor.dom.select('td[data-mce-selected],th[data-mce-selected]');
+                if (!sel.length) {
+                    var cur = editor.dom.getParent(editor.selection.getStart(), 'td,th');
+                    if (cur) sel = [cur];
+                }
+                if (!sel.length) {
+                    editor.notificationManager.open({ text: 'Letakkan kursor di sel tabel dulu.', type: 'warning', timeout: 2500 });
+                    return;
+                }
+                var jadikan = !editor.dom.hasClass(sel[0], 'ti-isi');
+                editor.undoManager.transact(function () {
+                    sel.forEach(function (cell) {
+                        if (jadikan) {
+                            editor.dom.addClass(cell, 'ti-isi');
+                            // buang titik-titik "........"; sisa teks (mis. "V") jadi petunjuk isian
+                            var t = cell.textContent.replace(/[.\u2026]{3,}/g, '').replace(/\u00a0/g, ' ').trim();
+                            cell.innerHTML = t ? editor.dom.encode(t) : '&nbsp;';
+                        } else {
+                            editor.dom.removeClass(cell, 'ti-isi');
+                        }
+                        var tb = editor.dom.getParent(cell, 'table');
+                        if (tb) {
+                            if (editor.dom.select('td.ti-isi,th.ti-isi', tb).length) editor.dom.addClass(tb, 'tabel-input');
+                            else editor.dom.removeClass(tb, 'tabel-input');
+                        }
+                    });
+                });
+                editor.nodeChanged();
+            }
+        });
+    }
 });
 </script>
 

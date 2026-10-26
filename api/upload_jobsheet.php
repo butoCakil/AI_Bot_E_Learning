@@ -2,6 +2,7 @@
 session_start();
 require_once dirname(__DIR__) . '/config/config.php';
 require_once dirname(__DIR__) . '/includes/functions.php';
+require_once dirname(__DIR__) . '/includes/syarat_konten.php';
 
 if (empty($_SESSION['user_id'])) {
     http_response_code(401);
@@ -50,6 +51,14 @@ if ($size > 10 * 1024 * 1024) { // maks 10MB — selaras dgn php.ini & form
     exit;
 }
 
+// Hanya konten yang mewajibkan upload (tipe apa pun)
+$konten = ambil_konten($content_id);
+if (!$konten || empty($konten['perlu_upload'])) {
+    http_response_code(400);
+    echo json_encode(['ok' => false, 'msg' => 'Konten ini tidak memerlukan upload']);
+    exit;
+}
+
 $upload_dir = dirname(__DIR__) . '/uploads/jobsheet/';
 $filename   = 'js_' . $user_id . '_' . $content_id . '_' . time() . '.' . $ext;
 $dest       = $upload_dir . $filename;
@@ -90,7 +99,7 @@ $stmt->execute([
 ]);
 
 log_aktivitas($user_id, 'upload_jobsheet', $content_id, $topik);
-// Jobsheet baru tuntas setelah file terunggah
-log_aktivitas($user_id, 'selesai_materi', $content_id, $topik);
+// Tuntas hanya bila SEMUA syarat konten terpenuhi (timer, tabel, upload)
+$s = tandai_selesai_jika_lengkap($user_id, $konten, $topik);
 
-echo json_encode(['ok' => true, 'filename' => $original_name]);
+echo json_encode(['ok' => true, 'filename' => $original_name] + $s, JSON_UNESCAPED_UNICODE);

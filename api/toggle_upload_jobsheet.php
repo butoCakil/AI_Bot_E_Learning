@@ -17,7 +17,7 @@ if (!$content_id) {
 }
 
 $pdo = db();
-$stmt = $pdo->prepare("UPDATE content SET perlu_upload = ? WHERE id = ? AND tipe = 'jobsheet'");
+$stmt = $pdo->prepare("UPDATE content SET perlu_upload = ? WHERE id = ?");
 $stmt->execute([$nilai ? 1 : 0, $content_id]);
 
 header('Location: /dashboard_guru.php?token=smkbansari2024');
