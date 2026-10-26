@@ -4,6 +4,12 @@ require_once 'includes/functions.php';
 
 session_start();
 
+// Wajib login guru SEBELUM handler aksi apa pun dijalankan
+if (empty($_SESSION['role']) || $_SESSION['role'] !== 'guru') {
+    header('Location: login_guru.php');
+    exit;
+}
+
 $pdo = db();
 
 // ── Handler aksi (POST ke halaman sendiri) ───────────────────
