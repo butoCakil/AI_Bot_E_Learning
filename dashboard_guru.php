@@ -488,110 +488,375 @@ include __DIR__ . '/includes/topbar_guru.php';
         <a href="rekap_nilai.php" class="btn btn-3"><i class="icon-clipboard-list"></i> Lihat Rekap Nilai Seluruh Item</a>
     </div>
 
-    <div class="card">
-        <div class="card-h" style="margin-bottom:14px"><h3><i class="icon-paperclip"></i> Submission jobsheet siswa (<?= count($submissions) ?>)</h3></div>
-        <?php if ($submissions): ?>
+    <?php
+    // ── Penilaian per siswa (ringkasan kelas + daftar + modal) ──
+    require_once __DIR__ . '/includes/syarat_konten.php';
+    require_once __DIR__ . '/includes/rekap_tugas.php';
+    if (!function_exists('pn_persen')) {
+        function pn_persen($a, $b) { return $b > 0 ? (int) round($a / $b * 100) : 0; }
+    }
+    $pn_siswa = $pdo->query("SELECT id, nama, nis, kelas FROM users WHERE role = 'siswa' ORDER BY kelas, nama")->fetchAll();
+    $pn_rekap = rt_rekap($pn_siswa);
+    $pn_kelas = [];
+    foreach ($pn_siswa as $s) {
+        $r = $pn_rekap[(int) $s['id']];
+        foreach ([($s['kelas'] ?: '-'), '__semua'] as $kk) {
+            $a = $pn_kelas[$kk] ?? ['siswa' => 0, 'pretest' => 0, 'm_s' => 0, 'm_t' => 0, 'k' => 0, 't' => 0, 'n' => 0, 'p' => 0];
+            $a['siswa']++;
+            if ($r['profil']) $a['pretest']++;
+            $a['m_s'] += $r['materi_selesai']; $a['m_t'] += $r['materi_total'];
+            $a['k']   += $r['terkumpul'];      $a['t']   += $r['tugas_total'];
+            $a['n']   += $r['dinilai'];        $a['p']   += $r['perlu_nilai'];
+            $pn_kelas[$kk] = $a;
+        }
+    }
+    $pn_semua = $pn_kelas['__semua'] ?? null;
+    unset($pn_kelas['__semua']);
+    ksort($pn_kelas);
+    $pn_kelas_awal = array_key_first($pn_kelas);
+    $pn_kartu = $pn_semua ? (['Semua kelas' => $pn_semua] + $pn_kelas) : $pn_kelas;
+    ?>
+
+    <div class="pn-ring">
+        <?php foreach ($pn_kartu as $nm => $a):
+            $semua = ($nm === 'Semua kelas' && $pn_semua === $a);
+            $pm = pn_persen($a['m_s'], $a['m_t']);
+            $pk = pn_persen($a['k'], $a['t']);
+            $pd = pn_persen($a['n'], $a['n'] + $a['p']);
+        ?>
+            <<?= $semua ? 'div class="pn-kartu semua"' : 'button type="button" class="pn-kartu" data-kelas="' . htmlspecialchars($nm) . '" onclick="pnPilihKelas(this.dataset.kelas)"' ?>>
+                <h4><?= htmlspecialchars($nm) ?></h4>
+                <div class="pn-muted"><?= $a['siswa'] ?> siswa<?= $a['siswa'] - $a['pretest'] > 0 ? ' · ' . ($a['siswa'] - $a['pretest']) . ' belum pre-test' : '' ?></div>
+                <div class="pn-bar"><span>Materi</span><i><em style="width:<?= $pm ?>%"></em></i><b><?= $pm ?>%</b></div>
+                <div class="pn-bar"><span>Pengumpulan</span><i><em style="width:<?= $pk ?>%"></em></i><b><?= $pk ?>%</b></div>
+                <div class="pn-bar"><span>Dinilai</span><i><em style="width:<?= $pd ?>%"></em></i><b><?= $pd ?>%</b></div>
+                <?php if ($a['p'] > 0): ?>
+                    <div style="margin-top:6px"><span class="pn-badge pn-w-amber"><?= $a['p'] ?> perlu dinilai</span></div>
+                <?php endif; ?>
+            </<?= $semua ? 'div' : 'button' ?>>
+        <?php endforeach; ?>
+    </div>
+
+    <div class="card" id="pn-daftar">
+        <div class="card-h" style="margin-bottom:12px"><h3><i class="icon-clipboard-check"></i> Penilaian per siswa</h3></div>
+        <div class="pn-filter">
+            <select id="pn-kelas">
+                <?php foreach (array_keys($pn_kelas) as $kl): ?>
+                    <option value="<?= htmlspecialchars($kl) ?>" <?= $kl === $pn_kelas_awal ? 'selected' : '' ?>><?= htmlspecialchars($kl) ?></option>
+                <?php endforeach; ?>
+            </select>
+            <select id="pn-status">
+                <option value="">Semua status</option>
+                <option value="perlu_dinilai" selected>Perlu dinilai</option>
+                <option value="belum_kumpul">Belum mengumpulkan</option>
+                <option value="belum_lengkap">Tugas belum lengkap</option>
+                <option value="lengkap">Lengkap</option>
+                <option value="belum_pretest">Belum pre-test</option>
+            </select>
+            <input id="pn-cari" type="search" placeholder="Cari nama atau NIS" style="flex:1;min-width:160px">
+        </div>
         <div style="overflow-x:auto">
             <table class="gtable">
-                <thead><tr><th>Siswa</th><th>Kelas</th><th>Jobsheet</th><th>File</th><th>Tgl Upload</th><th>Nilai</th></tr></thead>
+                <thead><tr><th>Siswa</th><th>Materi</th><th>Dikumpul</th><th>Dinilai</th><th>Status</th></tr></thead>
                 <tbody>
-                <?php foreach ($submissions as $sub): ?>
-                <tr>
-                    <td><strong><?= htmlspecialchars($sub['nama']) ?></strong><br><small style="color:var(--abu-muda)"><?= htmlspecialchars($sub['nis']) ?></small></td>
-                    <td><?= htmlspecialchars($sub['kelas'] ?? '-') ?></td>
-                    <td style="font-size:12.5px"><?= htmlspecialchars(mb_strimwidth($sub['judul'] ?? '-',0,32,'…')) ?></td>
-                    <td>
-                        <?php if ($sub['file_path']): ?>
-                            <a href="/<?= htmlspecialchars($sub['file_path']) ?>" target="_blank" class="dlink"><i class="icon-external-link"></i> <?= htmlspecialchars(mb_strimwidth($sub['file_original_name'] ?? 'file',0,20,'…')) ?></a>
-                        <?php else: ?>—<?php endif; ?>
-                    </td>
-                    <td style="font-size:12px;color:var(--abu-muda);white-space:nowrap"><?= date('d/m/y H:i', strtotime($sub['created_at'])) ?></td>
-                    <td>
-                        <form method="POST" action="api/nilai_jobsheet.php" style="display:flex;gap:5px;align-items:center">
-                            <input type="hidden" name="submission_id" value="<?= $sub['id'] ?>">
-                            <input type="number" name="nilai" min="0" max="100" value="<?= $sub['nilai'] !== null ? (int)$sub['nilai'] : '' ?>" placeholder="0-100"
-                                   style="width:64px;padding:6px 8px;font-size:12px;border:2px solid var(--garis);border-radius:6px;font-family:inherit">
-                            <button type="submit" class="btn btn-3 btn-sm" style="padding:6px 12px"><i class="icon-save"></i></button>
-                        </form>
-                    </td>
-                </tr>
+                <?php foreach ($pn_siswa as $s):
+                    $uid = (int) $s['id'];
+                    $r   = $pn_rekap[$uid];
+                    $jn  = $r['dinilai'] + $r['perlu_nilai'];
+                    $wr  = ['perlu_dinilai' => 'pn-w-amber', 'belum_lengkap' => 'pn-w-biru', 'lengkap' => 'pn-w-teal'][$r['status']] ?? 'pn-w-abu';
+                ?>
+                    <tr class="pn-baris" data-id="<?= $uid ?>" data-kelas="<?= htmlspecialchars($s['kelas'] ?: '-') ?>"
+                        data-status="<?= $r['status'] ?>" data-cari="<?= htmlspecialchars(mb_strtolower($s['nama'] . ' ' . $s['nis'])) ?>"
+                        onclick="pnBuka(<?= $uid ?>)">
+                        <td><strong><?= htmlspecialchars($s['nama']) ?></strong><br><small class="pn-muted"><?= htmlspecialchars($s['nis']) ?></small></td>
+                        <td id="pn-m-<?= $uid ?>"><?= $r['materi_total'] ? $r['materi_selesai'] . '/' . $r['materi_total'] . ' <small class="pn-muted">(' . pn_persen($r['materi_selesai'], $r['materi_total']) . '%)</small>' : '–' ?></td>
+                        <td id="pn-k-<?= $uid ?>"><?= $r['tugas_total'] ? $r['terkumpul'] . '/' . $r['tugas_total'] : '–' ?></td>
+                        <td id="pn-n-<?= $uid ?>"><?= $jn ? $r['dinilai'] . '/' . $jn : '–' ?></td>
+                        <td id="pn-s-<?= $uid ?>"><span class="pn-badge <?= $wr ?>"><?= htmlspecialchars($r['label']) ?></span></td>
+                    </tr>
                 <?php endforeach; ?>
                 </tbody>
             </table>
         </div>
-        <?php else: ?>
-        <div class="kosong" style="padding:30px"><i class="icon-paperclip"></i><b>Belum ada submission</b><p>Belum ada siswa yang mengupload jobsheet.</p></div>
-        <?php endif; ?>
+        <div id="pn-kosong" class="kosong" style="padding:26px;display:none">
+            <b>Tidak ada siswa dengan status ini</b>
+            <p><a href="javascript:void(0)" onclick="pnSemuaStatus()" class="pn-link">Tampilkan semua status</a></p>
+        </div>
     </div>
 
-    <?php
-    // ── Isian tabel input siswa ──
-    require_once __DIR__ . '/includes/syarat_konten.php';
-    $isian_tabel = $pdo->query("
-        SELECT t.user_id, t.content_id, t.jawaban, t.lengkap, t.updated_at,
-               u.nama, u.nis, u.kelas, c.judul, c.tipe, c.isi
-        FROM tabel_input_jawaban t
-        JOIN users u   ON u.id = t.user_id
-        JOIN content c ON c.id = t.content_id
-        ORDER BY t.updated_at DESC
-    ")->fetchAll();
-    $kelas_isian = array_values(array_unique(array_filter(array_column($isian_tabel, 'kelas'))));
-    sort($kelas_isian);
-    ?>
-    <div class="card" style="margin-top:16px">
-        <div class="card-h" style="margin-bottom:14px;display:flex;flex-wrap:wrap;gap:10px;align-items:center">
-            <h3><i class="icon-clipboard-check"></i> Isian tabel siswa (<?= count($isian_tabel) ?>)</h3>
-            <?php if ($kelas_isian): ?>
-                <select onchange="filterIsian(this.value)"
-                        style="margin-left:auto;padding:6px 10px;font-size:12.5px;border:2px solid var(--garis);border-radius:6px;font-family:inherit">
-                    <option value="">Semua kelas</option>
-                    <?php foreach ($kelas_isian as $kl): ?>
-                        <option value="<?= htmlspecialchars($kl) ?>"><?= htmlspecialchars($kl) ?></option>
-                    <?php endforeach; ?>
-                </select>
-            <?php endif; ?>
-        </div>
-
-        <?php if ($isian_tabel): ?>
-            <div class="ti-review">
-                <?php foreach ($isian_tabel as $r):
-                    $jwb = json_decode($r['jawaban'], true) ?: [];
-                    $tabel_html = ti_render_terisi($r['isi'], $jwb);
-                ?>
-                    <details class="ti-item" data-kelas="<?= htmlspecialchars($r['kelas'] ?? '') ?>"
-                             style="border:1px solid var(--garis);border-radius:10px;padding:10px 14px;margin-bottom:8px">
-                        <summary style="cursor:pointer;font-size:13px;line-height:1.6">
-                            <strong><?= htmlspecialchars($r['nama']) ?></strong>
-                            <small style="color:var(--abu-muda)"><?= htmlspecialchars($r['nis']) ?> · <?= htmlspecialchars($r['kelas'] ?? '-') ?></small>
-                            — <?= htmlspecialchars(mb_strimwidth($r['judul'] ?? '-', 0, 45, '…')) ?>
-                            <small style="color:var(--abu-muda)">(<?= htmlspecialchars($r['tipe']) ?>)</small>
-                            · <b style="font-size:11.5px;color:<?= $r['lengkap'] ? 'var(--teal)' : '#B45309' ?>">
-                                <?= $r['lengkap'] ? 'Lengkap' : 'Belum lengkap' ?></b>
-                            · <small style="color:var(--abu-muda)"><?= date('d/m/y H:i', strtotime($r['updated_at'])) ?></small>
-                        </summary>
-                        <div style="margin-top:10px;overflow-x:auto">
-                            <?= $tabel_html !== '' ? $tabel_html
-                                : '<em style="font-size:12.5px;color:var(--abu-muda)">Tabel isian pada konten ini sudah diubah/dihapus.</em>' ?>
-                        </div>
-                    </details>
-                <?php endforeach; ?>
+    <div id="pn-modal" class="pn-bg" onclick="if (event.target === this) pnTutup()">
+        <div class="pn-kotak" role="dialog" aria-modal="true">
+            <div class="pn-h">
+                <div><b id="pn-nama" style="font-size:15.5px"></b> <small id="pn-sub" class="pn-muted"></small></div>
+                <div class="pn-nav">
+                    <button type="button" id="pn-prev" title="Siswa sebelumnya">&lsaquo;</button>
+                    <button type="button" id="pn-next" title="Siswa berikutnya">&rsaquo;</button>
+                    <button type="button" onclick="pnTutup()" title="Tutup">&times;</button>
+                </div>
             </div>
-        <?php else: ?>
-            <div class="kosong" style="padding:30px"><i class="icon-clipboard-check"></i><b>Belum ada isian</b><p>Belum ada siswa yang mengisi tabel.</p></div>
-        <?php endif; ?>
+            <div id="pn-ringkas" class="pn-ringkas"></div>
+            <div id="pn-isi"></div>
+        </div>
     </div>
 
     <style>
-        .ti-review table { font-size: 12.5px; margin-bottom: 6px; }
-        .ti-review th, .ti-review td { border: 1px solid var(--garis); padding: 6px 9px; text-align: left; }
-        .ti-review th { background: var(--biru-muda, #EFF6FF); }
+        .pn-ring { display:grid; grid-template-columns:repeat(auto-fit, minmax(190px, 1fr)); gap:10px; margin-bottom:14px; }
+        .pn-kartu { text-align:left; background:#fff; border:2px solid var(--garis, #E5E7EB); border-radius:12px; padding:12px 14px; font:inherit; cursor:pointer; }
+        .pn-kartu.semua { cursor:default; background:var(--biru-muda, #EFF6FF); }
+        .pn-kartu.on { border-color:var(--teal, #0D9488); }
+        .pn-kartu h4 { margin:0 0 2px; font-size:13.5px; }
+        .pn-bar { display:grid; grid-template-columns:84px 1fr 38px; align-items:center; gap:6px; font-size:11.5px; margin-top:6px; }
+        .pn-bar i { display:block; height:6px; background:var(--garis, #E5E7EB); border-radius:3px; overflow:hidden; }
+        .pn-bar em { display:block; height:100%; background:var(--teal, #0D9488); }
+        .pn-bar b { text-align:right; }
+        .pn-filter { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px; }
+        .pn-filter select, .pn-filter input { padding:7px 10px; font-size:13px; border:2px solid var(--garis, #E5E7EB); border-radius:8px; font-family:inherit; }
+        .pn-baris { cursor:pointer; }
+        .pn-baris:hover td { background:var(--biru-muda, #EFF6FF); }
+        .pn-badge { display:inline-block; font-size:11.5px; font-weight:700; padding:2px 9px; border-radius:999px; white-space:nowrap; }
+        .pn-w-amber { background:#FEF3C7; color:#B45309; } .pn-w-teal { background:#CCFBF1; color:#0F766E; }
+        .pn-w-biru { background:#DBEAFE; color:#1D4ED8; }  .pn-w-abu { background:#F1F5F9; color:#475569; }
+        .pn-muted { color:var(--abu-muda, #94A3B8); font-size:12.5px; }
+        .pn-link { color:var(--biru, #2563EB); font-weight:700; }
+        .pn-bg { display:none; position:fixed; inset:0; background:rgba(15,23,42,.5); z-index:999; align-items:flex-start; justify-content:center; padding:4vh 12px; overflow-y:auto; }
+        .pn-bg.on { display:flex; }
+        .pn-kotak { background:#fff; border-radius:14px; width:100%; max-width:760px; padding:18px 20px; }
+        .pn-h { display:flex; align-items:center; gap:10px; }
+        .pn-nav { margin-left:auto; display:flex; gap:6px; }
+        .pn-nav button { width:34px; height:34px; border:2px solid var(--garis, #E5E7EB); background:#fff; border-radius:8px; cursor:pointer; font-size:18px; line-height:1; }
+        .pn-ringkas { display:flex; flex-wrap:wrap; gap:6px 14px; align-items:center; font-size:12.5px; padding:10px 0 12px; border-bottom:1px solid var(--garis, #E5E7EB); margin-bottom:12px; }
+        .pn-topik { margin-bottom:14px; }
+        .pn-topik-h { display:flex; flex-wrap:wrap; gap:8px; align-items:center; font-size:13.5px; margin-bottom:6px; }
+        .pn-eval { font-size:11.5px; color:#475569; background:#F1F5F9; padding:2px 8px; border-radius:999px; }
+        .pn-tugas { border:1px solid var(--garis, #E5E7EB); border-radius:10px; padding:9px 12px; margin-bottom:6px; }
+        .pn-tugas summary { cursor:pointer; font-size:13px; }
+        .pn-tugas summary .pn-badge { margin-left:8px; }
+        .pn-tugas-isi { margin-top:10px; font-size:13px; }
+        .pn-nilai { display:flex; gap:6px; align-items:center; margin-top:8px; flex-wrap:wrap; }
+        .pn-nilai input { width:84px; padding:6px 8px; border:2px solid var(--garis, #E5E7EB); border-radius:6px; font-family:inherit; }
+        .pn-tabel-isi { overflow-x:auto; margin-top:8px; }
+        .pn-tabel-isi table { font-size:12.5px; }
+        .pn-tabel-isi th, .pn-tabel-isi td { border:1px solid var(--garis, #E5E7EB); padding:5px 8px; text-align:left; }
+        .pn-tabel-isi th { background:#EFF6FF; }
     </style>
+
     <script>
-    function filterIsian(k) {
-        document.querySelectorAll('.ti-item').forEach(function (d) {
-            d.style.display = (!k || d.getAttribute('data-kelas') === k) ? '' : 'none';
+    (function () {
+        var LABEL_TUGAS = { belum_kumpul: 'Belum dikumpulkan', sebagian: 'Sebagian', perlu_dinilai: 'Perlu dinilai',
+                            dinilai: 'Dinilai', tanpa_feedback: 'Belum ada feedback' };
+        var WARNA = { perlu_dinilai: 'pn-w-amber', belum_lengkap: 'pn-w-biru', lengkap: 'pn-w-teal',
+                      sebagian: 'pn-w-biru', dinilai: 'pn-w-teal', tanpa_feedback: 'pn-w-biru' };
+        var selK = document.getElementById('pn-kelas');
+        var selS = document.getElementById('pn-status');
+        var cari = document.getElementById('pn-cari');
+        var modal = document.getElementById('pn-modal');
+        var isi = document.getElementById('pn-isi');
+        var ringkas = document.getElementById('pn-ringkas');
+        var aktifId = null;
+
+        function el(tag, cls, txt) {
+            var e = document.createElement(tag);
+            if (cls) e.className = cls;
+            if (txt !== undefined && txt !== null) e.textContent = txt;
+            return e;
+        }
+        function badge(kode, teks) { return el('span', 'pn-badge ' + (WARNA[kode] || 'pn-w-abu'), teks); }
+        function fmt(n) { return String(Math.round(n * 10) / 10).replace('.', ','); }
+        function persen(a, b) { return b > 0 ? Math.round(a / b * 100) : 0; }
+        function baris() { return Array.prototype.slice.call(document.querySelectorAll('.pn-baris')); }
+        function terlihat() { return baris().filter(function (tr) { return tr.style.display !== 'none'; }); }
+
+        function saring() {
+            var k = selK.value, st = selS.value, q = cari.value.trim().toLowerCase(), n = 0;
+            baris().forEach(function (tr) {
+                var ok = tr.dataset.kelas === k && (!st || tr.dataset.status === st) && (!q || tr.dataset.cari.indexOf(q) >= 0);
+                tr.style.display = ok ? '' : 'none';
+                if (ok) n++;
+            });
+            document.getElementById('pn-kosong').style.display = n ? 'none' : '';
+            document.querySelectorAll('.pn-kartu[data-kelas]').forEach(function (c) {
+                c.classList.toggle('on', c.dataset.kelas === k);
+            });
+        }
+        window.pnPilihKelas = function (k) {
+            selK.value = k;
+            saring();
+            document.getElementById('pn-daftar').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        };
+        window.pnSemuaStatus = function () { selS.value = ''; saring(); };
+        selK.addEventListener('change', saring);
+        selS.addEventListener('change', saring);
+        cari.addEventListener('input', saring);
+
+        window.pnBuka = function (id) {
+            aktifId = id;
+            modal.classList.add('on');
+            document.body.style.overflow = 'hidden';
+            muat(id);
+        };
+        window.pnTutup = function () {
+            modal.classList.remove('on');
+            document.body.style.overflow = '';
+            aktifId = null;
+        };
+        function geser(d) {
+            var v = terlihat();
+            var i = v.findIndex(function (tr) { return +tr.dataset.id === aktifId; });
+            var t = v[i + d];
+            if (t) pnBuka(+t.dataset.id);
+        }
+        document.getElementById('pn-prev').addEventListener('click', function () { geser(-1); });
+        document.getElementById('pn-next').addEventListener('click', function () { geser(1); });
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape' && modal.classList.contains('on')) pnTutup();
         });
-    }
+
+        function muat(id) {
+            isi.innerHTML = '';
+            isi.appendChild(el('p', 'pn-muted', 'Memuat…'));
+            fetch('/api/penilaian_siswa.php?id=' + id)
+                .then(function (r) { return r.json(); })
+                .then(function (d) {
+                    if (id !== aktifId) return;
+                    if (!d.ok) { isi.textContent = d.msg || 'Gagal memuat data.'; return; }
+                    render(d);
+                    perbaruiBaris(d.siswa.id, d.rekap);
+                })
+                .catch(function () { if (id === aktifId) isi.textContent = 'Koneksi gagal, coba lagi.'; });
+        }
+
+        function perbaruiBaris(id, r) {
+            var tr = document.querySelector('.pn-baris[data-id="' + id + '"]');
+            if (!tr) return;
+            var jn = r.dinilai + r.perlu_nilai;
+            tr.dataset.status = r.status;
+            document.getElementById('pn-k-' + id).textContent = r.tugas_total ? r.terkumpul + '/' + r.tugas_total : '–';
+            document.getElementById('pn-n-' + id).textContent = jn ? r.dinilai + '/' + jn : '–';
+            var s = document.getElementById('pn-s-' + id);
+            s.innerHTML = '';
+            s.appendChild(badge(r.status, r.label));
+        }
+
+        function render(d) {
+            var r = d.rekap;
+            document.getElementById('pn-nama').textContent = d.siswa.nama;
+            document.getElementById('pn-sub').textContent = d.siswa.nis + ' · ' + (d.siswa.kelas || '-');
+
+            ringkas.innerHTML = '';
+            ringkas.appendChild(el('span', null, 'Materi ' + r.materi_selesai + '/' + r.materi_total + ' (' + persen(r.materi_selesai, r.materi_total) + '%)'));
+            ringkas.appendChild(el('span', null, 'Dikumpul ' + r.terkumpul + '/' + r.tugas_total));
+            ringkas.appendChild(el('span', null, 'Dinilai ' + r.dinilai + '/' + (r.dinilai + r.perlu_nilai)));
+            ringkas.appendChild(badge(r.status, r.label));
+            if (r.tanpa_feedback > 0) ringkas.appendChild(el('span', 'pn-muted', r.tanpa_feedback + ' tabel belum ada feedback'));
+
+            isi.innerHTML = '';
+            if (!r.profil) { isi.appendChild(el('p', 'pn-muted', 'Siswa ini belum mengerjakan pre-test, jadi belum punya jalur materi.')); return; }
+            if (!d.topik.length) { isi.appendChild(el('p', 'pn-muted', 'Tidak ada tugas di jalur siswa ini.')); return; }
+
+            d.topik.forEach(function (t) {
+                var sec = el('div', 'pn-topik');
+                var h = el('div', 'pn-topik-h');
+                h.appendChild(el('b', null, t.nama));
+                t.evaluasi.forEach(function (ev) {
+                    var e = el('span', 'pn-eval', 'Evaluasi: ' + (ev.persen === null ? 'belum dikerjakan' : ev.persen + '%'));
+                    e.title = ev.judul;
+                    h.appendChild(e);
+                });
+                sec.appendChild(h);
+                if (!t.tugas.length) sec.appendChild(el('p', 'pn-muted', 'Tidak ada tugas di topik ini.'));
+
+                t.tugas.forEach(function (tg) {
+                    var det = el('details', 'pn-tugas');
+                    if (tg.status === 'perlu_dinilai') det.open = true;
+                    var sm = el('summary');
+                    sm.appendChild(el('span', null, tg.judul));
+                    sm.appendChild(el('small', 'pn-muted', ' (' + tg.tipe + ')'));
+                    var lbl = (tg.status === 'dinilai' && tg.upload) ? 'Nilai ' + fmt(tg.upload.nilai) : (LABEL_TUGAS[tg.status] || tg.status);
+                    sm.appendChild(badge(tg.status, lbl));
+                    det.appendChild(sm);
+
+                    var body = el('div', 'pn-tugas-isi');
+                    if (tg.perlu_upload) {
+                        if (tg.upload) {
+                            var row = el('div');
+                            row.appendChild(el('span', 'pn-muted', 'File: '));
+                            var a = el('a', 'pn-link', tg.upload.nama);
+                            a.href = tg.upload.url;
+                            a.target = '_blank';
+                            row.appendChild(a);
+                            row.appendChild(el('small', 'pn-muted', ' · ' + tg.upload.waktu));
+                            body.appendChild(row);
+
+                            var f = el('div', 'pn-nilai');
+                            var inp = el('input');
+                            inp.type = 'number'; inp.min = '0'; inp.max = '100'; inp.step = '0.5'; inp.placeholder = '0–100';
+                            inp.value = tg.upload.nilai === null ? '' : tg.upload.nilai;
+                            var b = el('button', 'btn btn-3 btn-sm', 'Simpan nilai');
+                            b.type = 'button';
+                            var msg = el('small', 'pn-muted');
+                            b.addEventListener('click', function () { simpanNilai(tg.upload.id, inp, b, msg); });
+                            inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); b.click(); } });
+                            f.appendChild(inp); f.appendChild(b); f.appendChild(msg);
+                            body.appendChild(f);
+                        } else {
+                            body.appendChild(el('p', 'pn-muted', 'File belum diupload.'));
+                        }
+                    }
+                    if (tg.ada_tabel) {
+                        if (tg.tabel) {
+                            var w = el('div', 'pn-tabel-isi');
+                            if (tg.tabel.html) w.innerHTML = tg.tabel.html;
+                            else w.appendChild(el('em', 'pn-muted', 'Tabel isian di konten ini sudah diubah/dihapus.'));
+                            body.appendChild(w);
+                            var ket = 'Tabel disimpan ' + tg.tabel.waktu + (tg.tabel.lengkap ? '' : ' · belum lengkap');
+                            if (!tg.perlu_upload && tg.tabel.lengkap) ket += ' · belum ada feedback';
+                            body.appendChild(el('small', 'pn-muted', ket));
+                        } else {
+                            body.appendChild(el('p', 'pn-muted', 'Tabel belum diisi.'));
+                        }
+                    }
+                    det.appendChild(body);
+                    sec.appendChild(det);
+                });
+                isi.appendChild(sec);
+            });
+        }
+
+        function simpanNilai(sid, inp, b, msg) {
+            var v = inp.value.trim();
+            if (v === '' || isNaN(Number(v)) || Number(v) < 0 || Number(v) > 100) {
+                msg.textContent = 'Isi nilai 0–100 dulu';
+                msg.style.color = 'var(--coral, #DC2626)';
+                return;
+            }
+            b.disabled = true;
+            msg.textContent = 'Menyimpan…';
+            msg.style.color = '';
+            var fd = new FormData();
+            fd.append('submission_id', sid);
+            fd.append('nilai', v);
+            fetch('/api/simpan_nilai.php', { method: 'POST', body: fd })
+                .then(function (r) { return r.json(); })
+                .then(function (d) {
+                    b.disabled = false;
+                    if (d.ok) {
+                        msg.textContent = 'Tersimpan';
+                        msg.style.color = 'var(--teal, #0D9488)';
+                        setTimeout(function () { if (aktifId) muat(aktifId); }, 500);
+                    } else {
+                        msg.textContent = d.msg || 'Gagal menyimpan';
+                        msg.style.color = 'var(--coral, #DC2626)';
+                    }
+                })
+                .catch(function () {
+                    b.disabled = false;
+                    msg.textContent = 'Koneksi gagal, coba lagi.';
+                    msg.style.color = 'var(--coral, #DC2626)';
+                });
+        }
+
+        saring();
+    })();
     </script>
 </div>
 
