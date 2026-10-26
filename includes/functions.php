@@ -232,33 +232,40 @@ function cek_akses_posttest(int $user_id): array {
         return ['boleh' => false, 'alasan' => 'Kamu belum mengerjakan pre-test.'];
     }
 
-    $pdo    = db();
+    // Progres = konten di jalur profil (aktif) yang sudah SELESAI (semua syarat tuntas)
+    // ÷ jumlah konten aktif di jalur. Sama dengan kolom Materi di tab Penilaian guru.
+    $pdo        = db();
     $topik_list = array_keys(get_topik_list());
-    $total_harus = 0;
-    $total_dibuka = 0;
-
+    $ids_jalur  = [];
+    $stmt = $pdo->prepare("SELECT urutan_content FROM adaptation_rules WHERE profil_gabungan = ? AND topik = ?");
     foreach ($topik_list as $topik) {
-        $stmt = $pdo->prepare("
-            SELECT urutan_content FROM adaptation_rules
-            WHERE profil_gabungan = ? AND topik = ?
-        ");
         $stmt->execute([$profil['profil_gabungan'], $topik]);
         $row = $stmt->fetch();
         if ($row) {
-            $ids = array_unique(json_decode($row['urutan_content'], true));
-            $total_harus += count($ids);
+            foreach ((json_decode($row['urutan_content'], true) ?: []) as $id) $ids_jalur[(int) $id] = true;
         }
+    }
+    $ids_jalur = array_keys($ids_jalur);
 
-        $stmt2 = $pdo->prepare("
-            SELECT COUNT(DISTINCT content_id) FROM activity_log
-            WHERE user_id = ? AND tipe = 'buka_materi' AND topik = ?
-        ");
-        $stmt2->execute([$user_id, $topik]);
-        $total_dibuka += (int) $stmt2->fetchColumn();
+    $total_harus   = 0;
+    $total_selesai = 0;
+    if ($ids_jalur) {
+        $ph = implode(',', array_fill(0, count($ids_jalur), '?'));
+        $st = $pdo->prepare("SELECT id FROM content WHERE aktif = 1 AND id IN ($ph)");
+        $st->execute($ids_jalur);
+        $ids_aktif   = array_map('intval', array_column($st->fetchAll(), 'id'));
+        $total_harus = count($ids_aktif);
+        if ($ids_aktif) {
+            $ph2 = implode(',', array_fill(0, count($ids_aktif), '?'));
+            $st2 = $pdo->prepare("SELECT COUNT(DISTINCT content_id) FROM activity_log
+                                  WHERE user_id = ? AND tipe = 'selesai_materi' AND content_id IN ($ph2)");
+            $st2->execute(array_merge([$user_id], $ids_aktif));
+            $total_selesai = (int) $st2->fetchColumn();
+        }
     }
 
     $persen_progress = $total_harus > 0
-        ? round(($total_dibuka / $total_harus) * 100)
+        ? round(($total_selesai / $total_harus) * 100)
         : 0;
 
     if ($persen_progress < $min_persen) {
