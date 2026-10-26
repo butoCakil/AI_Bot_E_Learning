@@ -661,7 +661,7 @@ tinymce.init({
 </style>
 
 <script>
-var soalCount = <?= count($soal_list) ?>;
+var soalCount = <?= count($soal_list ?? []) ?>;
 
 function setMode(mode) {
     document.getElementById('input-mode').value = mode;
