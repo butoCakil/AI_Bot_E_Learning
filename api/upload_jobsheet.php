@@ -3,6 +3,7 @@ session_start();
 require_once dirname(__DIR__) . '/config/config.php';
 require_once dirname(__DIR__) . '/includes/functions.php';
 require_once dirname(__DIR__) . '/includes/syarat_konten.php';
+require_once dirname(__DIR__) . '/includes/feedback.php';
 
 if (empty($_SESSION['user_id'])) {
     http_response_code(401);
@@ -56,6 +57,13 @@ $konten = ambil_konten($content_id);
 if (!$konten || empty($konten['perlu_upload'])) {
     http_response_code(400);
     echo json_encode(['ok' => false, 'msg' => 'Konten ini tidak memerlukan upload']);
+    exit;
+}
+
+// Sudah dinilai guru → dikunci (kecuali guru meminta revisi)
+if (fb_terkunci($user_id, $content_id)) {
+    http_response_code(423);
+    echo json_encode(['ok' => false, 'msg' => 'Kiriman sudah dinilai guru dan dikunci']);
     exit;
 }
 

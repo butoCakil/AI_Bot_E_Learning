@@ -3,6 +3,7 @@ session_start();
 require_once dirname(__DIR__) . '/config/config.php';
 require_once dirname(__DIR__) . '/includes/functions.php';
 require_once dirname(__DIR__) . '/includes/syarat_konten.php';
+require_once dirname(__DIR__) . '/includes/feedback.php';
 header('Content-Type: application/json');
 
 function gagal(int $code, string $msg) {
@@ -25,6 +26,7 @@ if (!$konten || $konten['tipe'] === 'evaluasi') gagal(404, 'Konten tidak ditemuk
 
 $sel = ti_daftar_sel($konten['isi'] ?? '');
 if (!$sel) gagal(400, 'Konten ini tidak memiliki tabel isian');
+if (fb_terkunci($user_id, $content_id)) gagal(423, 'Isian sudah dinilai guru dan dikunci');
 
 // Hanya simpan kunci yang memang ada di konten
 $bersih = [];

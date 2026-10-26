@@ -2,6 +2,7 @@
 session_start();
 require_once 'config/config.php';
 require_once 'includes/functions.php';
+require_once 'includes/feedback.php';
 
 require_login();
 
@@ -251,6 +252,41 @@ include __DIR__ . '/includes/topbar_siswa.php';
     <!-- BELAJAR LEWAT WHATSAPP -->
     <?php $botNomor = preg_replace('/\D/', '', get_pengaturan('wa_bot_nomor', '')); ?>
     <?php if ($botNomor): ?>
+    <?php
+    $notif_fb      = fb_notif_siswa((int) $user_id);
+    $nama_topik_fb = get_topik_list();
+    if ($notif_fb): ?>
+    <div class="card" style="border:2px solid #DDD6FE">
+        <div class="card-h">
+            <h3><i class="icon-clipboard-check"></i> Feedback dari guru</h3>
+        </div>
+        <p class="card-sub">Ketuk judul materi untuk melihat detail feedback.</p>
+        <?php foreach ($notif_fb as $tp => $nf): ?>
+            <div style="margin-top:12px">
+                <div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px">
+                    <b style="font-size:13.5px"><?= htmlspecialchars($nama_topik_fb[$tp] ?? $tp) ?></b>
+                    <?php if ($nf['revisi'] > 0): ?>
+                        <span class="tag" style="background:#EDE9FE;color:#6D28D9"><?= $nf['revisi'] ?> perlu diperbaiki</span>
+                    <?php endif; ?>
+                    <?php if ($nf['baru'] > 0): ?>
+                        <span class="tag ok"><?= $nf['baru'] ?> feedback baru</span>
+                    <?php endif; ?>
+                </div>
+                <ul style="margin:6px 0 0 18px;font-size:13px;line-height:1.8">
+                    <?php foreach ($nf['item'] as $it): ?>
+                        <li>
+                            <a href="materi.php?topik=<?= urlencode($tp) ?>&konten=<?= (int) $it['content_id'] ?>" style="color:var(--biru);font-weight:700;text-decoration:none">
+                                <?= htmlspecialchars($it['judul']) ?>
+                            </a>
+                            — <?= (int) $it['minta_revisi'] === 1 ? '<b style="color:#6D28D9">perlu diperbaiki</b>' : htmlspecialchars($it['label']) ?>
+                        </li>
+                    <?php endforeach; ?>
+                </ul>
+            </div>
+        <?php endforeach; ?>
+    </div>
+    <?php endif; ?>
+
     <div class="card">
         <div class="card-h">
             <h3><i class="icon-signal"></i> Belajar lewat WhatsApp</h3>

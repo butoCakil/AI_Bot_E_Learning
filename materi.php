@@ -3,6 +3,7 @@ session_start();
 require_once 'config/config.php';
 require_once 'includes/functions.php';
 require_once 'includes/syarat_konten.php';
+require_once 'includes/feedback.php';
 
 require_login();
 
@@ -121,6 +122,17 @@ if ($konten_aktif) {
 $syarat = ['selesai' => false, 'semua_ok' => true, 'item' => []];
 if ($konten_aktif) {
     $syarat = tandai_selesai_jika_lengkap((int) $user_id, $konten_aktif, $topik_aktif);
+}
+
+// ── Feedback guru & status kunci kiriman ─────────────────────────
+$feedback = null;
+$terkunci = false;
+$revisi   = false;
+if ($konten_aktif && $konten_aktif['tipe'] !== 'evaluasi') {
+    fb_tandai_dibaca((int) $user_id, (int) $konten_id_aktif);   // feedback non-revisi dianggap terbaca
+    $feedback = fb_ambil((int) $user_id, (int) $konten_id_aktif);
+    $terkunci = fb_terkunci((int) $user_id, (int) $konten_id_aktif);
+    $revisi   = $feedback && (int) $feedback['minta_revisi'] === 1;
 }
 
 // Hitung progress topik ini
@@ -452,9 +464,11 @@ include __DIR__ . '/includes/topbar_siswa.php';
 
                     <?php if ($ada_tabel): ?>
                         <div class="rata" style="margin-top:14px;flex-wrap:wrap;gap:10px">
+                            <?php if (!$terkunci): ?>
                             <button type="button" class="btn btn-1 btn-sm" id="ti-simpan">
                                 <i class="icon-check"></i> Simpan isian tabel
                             </button>
+                            <?php endif; ?>
                             <span id="ti-status" style="font-size:12.5px;font-weight:600;color:var(--abu)"></span>
                         </div>
                     <?php endif; ?>
@@ -474,7 +488,9 @@ include __DIR__ . '/includes/topbar_siswa.php';
                                         <span class="tag ok"><i class="icon-award"></i> Nilai: <?= $jobsheet_submission['nilai'] ?></span>
                                     <?php endif; ?>
                                 </div>
+                                <?php if (!$terkunci): ?>
                                 <p style="font-size:12px;color:var(--abu-muda);margin-top:8px">Upload ulang jika ingin mengganti file.</p>
+                                <?php endif; ?>
                             <?php else: ?>
                                 <div class="tags" id="upload-status">
                                     <span class="tag" style="background:var(--amber-muda);color:#B45309">
@@ -483,6 +499,7 @@ include __DIR__ . '/includes/topbar_siswa.php';
                                 </div>
                             <?php endif; ?>
 
+                            <?php if (!$terkunci): ?>
                             <div class="rata" style="margin-top:12px;flex-wrap:wrap">
                                 <input type="file" id="file-jobsheet" accept=".jpg,.jpeg,.png,.pdf,.doc,.docx" style="display:none">
                                 <button type="button" class="btn btn-2 btn-sm" onclick="document.getElementById('file-jobsheet').click()">
@@ -494,11 +511,81 @@ include __DIR__ . '/includes/topbar_siswa.php';
                                 <span id="file-label" style="font-size:12px;color:var(--abu);font-weight:600"></span>
                             </div>
                             <div id="upload-msg" style="margin-top:8px;font-size:12.5px;font-weight:600"></div>
+                            <?php else: ?>
+                            <p style="font-size:12.5px;color:var(--abu);margin-top:10px">
+                                <i class="icon-lock"></i> Kiriman sudah dinilai guru dan dikunci.
+                            </p>
+                            <?php endif; ?>
                         </div>
                     <?php endif; ?>
 
                 <?php endif; ?>
             </div>
+
+            <?php if ($feedback):
+                $fb_skala = $feedback['skala'];
+                $fb_p     = (int) $feedback['predikat'];
+                $fb_lbl   = fb_label($fb_skala, $fb_p);
+                $fb_masuk = !$revisi && fb_status($feedback) === 'revisi_masuk';
+            ?>
+                <div class="card" id="kotak-feedback" style="margin-top:14px;border:2px solid <?= $revisi ? '#DDD6FE' : 'var(--teal-muda)' ?>">
+                    <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:8px">
+                        <b style="font-size:14px"><i class="icon-clipboard-check"></i> Feedback guru</b>
+                        <span style="font-size:12px;color:var(--abu-muda)"><?= htmlspecialchars(date('d-m-Y H:i', strtotime($feedback['dinilai_at']))) ?></span>
+                    </div>
+                    <div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:8px">
+                        <?php if ($fb_skala === 'bintang'): ?>
+                            <span style="font-size:22px;letter-spacing:2px;color:#F59E0B" aria-label="<?= $fb_p ?> dari 5 bintang"><?= str_repeat('★', $fb_p) ?><span style="color:#CBD5E1"><?= str_repeat('★', 5 - $fb_p) ?></span></span>
+                        <?php endif; ?>
+                        <span class="tag <?= $fb_p >= 3 ? 'ok' : '' ?>" style="<?= $fb_p >= 3 ? '' : 'background:#EDE9FE;color:#6D28D9' ?>"><?= htmlspecialchars($fb_lbl) ?></span>
+                        <?php if (!$revisi && $jobsheet_submission && $jobsheet_submission['nilai'] !== null): ?>
+                            <span class="tag ok"><i class="icon-award"></i> Nilai: <?= htmlspecialchars((string) (0 + $jobsheet_submission['nilai'])) ?></span>
+                        <?php endif; ?>
+                    </div>
+                    <?php if (!empty($feedback['komentar'])): ?>
+                        <div style="background:var(--biru-muda);border-radius:var(--r-sm);padding:10px 12px;font-size:13.5px;line-height:1.6">
+                            <?= nl2br(htmlspecialchars($feedback['komentar'])) ?>
+                        </div>
+                    <?php endif; ?>
+
+                    <?php if ($revisi): ?>
+                        <div style="margin-top:12px;background:#EDE9FE;color:#5B21B6;border-radius:var(--r-sm);padding:10px 12px;font-size:13px;line-height:1.6">
+                            <b>Guru meminta revisi.</b> Perbaiki kirimanmu sesuai komentar di atas, lalu tekan <b>Kirim revisi</b>.
+                        </div>
+                        <div class="rata" style="margin-top:10px;flex-wrap:wrap;gap:10px">
+                            <button type="button" class="btn btn-1 btn-sm" onclick="kirimRevisi(this)"><i class="icon-send"></i> Kirim revisi</button>
+                            <span id="revisi-msg" style="font-size:12.5px;font-weight:600"></span>
+                        </div>
+                        <script>
+                        function kirimRevisi(btn) {
+                            var m = document.getElementById('revisi-msg');
+                            btn.disabled = true;
+                            m.textContent = 'Mengirim…';
+                            m.style.color = '';
+                            var fd = new FormData();
+                            fd.append('content_id', <?= (int) $konten_id_aktif ?>);
+                            fetch('/api/kirim_revisi.php', { method: 'POST', body: fd })
+                                .then(function (r) { return r.json(); })
+                                .then(function (d) {
+                                    if (d.ok) { location.reload(); return; }
+                                    btn.disabled = false;
+                                    m.textContent = d.msg || 'Gagal mengirim revisi';
+                                    m.style.color = 'var(--coral)';
+                                })
+                                .catch(function () {
+                                    btn.disabled = false;
+                                    m.textContent = 'Koneksi gagal, coba lagi.';
+                                    m.style.color = 'var(--coral)';
+                                });
+                        }
+                        </script>
+                    <?php elseif ($fb_masuk): ?>
+                        <p style="margin-top:10px;font-size:12.5px;color:var(--abu)">
+                            Revisi ke-<?= (int) $feedback['revisi_ke'] ?> sudah dikirim — menunggu penilaian guru.
+                        </p>
+                    <?php endif; ?>
+                </div>
+            <?php endif; ?>
 
             <?php if (!empty($syarat['item']) && !$syarat['semua_ok']): ?>
                 <!-- Penanda syarat (diisi JS) -->
@@ -586,6 +673,7 @@ include __DIR__ . '/includes/topbar_siswa.php';
 (function () {
     var SYARAT = <?= json_encode((object) $syarat['item'], $jsf) ?>;
     var CID    = <?= (int) $konten_id_aktif ?>;
+    var TERKUNCI = <?= $terkunci ? 'true' : 'false' ?>;
     var TOPIK  = <?= json_encode($topik_aktif, $jsf) ?>;
     var LABEL  = <?= json_encode($label_next, $jsf) ?>;
     var HREF   = <?= json_encode($href_next, $jsf) ?>;
@@ -697,6 +785,7 @@ include __DIR__ . '/includes/topbar_siswa.php';
                         inp.setAttribute('data-key', key);
                         inp.placeholder = ph || 'isi di sini';
                         inp.value = SIMPAN[key] || '';
+                        if (TERKUNCI) inp.readOnly = true;
                         cell.textContent = '';
                         cell.appendChild(inp);
                         inputs.push(inp);
@@ -739,7 +828,7 @@ include __DIR__ . '/includes/topbar_siswa.php';
                 })
                 .catch(function () { tulis('Koneksi gagal, coba lagi.', 'var(--coral)'); });
         }
-        inputs.forEach(function (i) {
+        if (!TERKUNCI) inputs.forEach(function (i) {
             i.addEventListener('input', function () { kotor = true; tulis('Belum disimpan…', '#B45309'); });
             i.addEventListener('change', function () { clearTimeout(tSimpan); tSimpan = setTimeout(simpan, 400); });
         });
@@ -749,8 +838,9 @@ include __DIR__ . '/includes/topbar_siswa.php';
             if (kotor) { e.preventDefault(); e.returnValue = ''; }
         });
         var awal = jumlahKosong();
-        tulis(awal === 0 ? 'Semua sel sudah terisi' : awal + ' sel belum diisi',
-              awal === 0 ? 'var(--teal)' : 'var(--abu)');
+        if (TERKUNCI) tulis('Isian sudah dinilai guru dan dikunci', 'var(--abu)');
+        else tulis(awal === 0 ? 'Semua sel sudah terisi' : awal + ' sel belum diisi',
+                   awal === 0 ? 'var(--teal)' : 'var(--abu)');
     }
 
     render();
@@ -806,7 +896,8 @@ function uploadJobsheet() {
         });
 }
 
-document.getElementById('file-jobsheet').addEventListener('change', function () {
+var fileJs = document.getElementById('file-jobsheet');
+if (fileJs) fileJs.addEventListener('change', function () {
     if (this.files[0]) {
         document.getElementById('file-label').textContent = this.files[0].name;
         document.getElementById('btn-upload').style.display = 'inline-flex';
