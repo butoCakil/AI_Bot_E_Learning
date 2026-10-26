@@ -1,6 +1,7 @@
 <?php
 require_once '../config/config.php';
 require_once '../includes/functions.php';
+require_once '../includes/wa.php';
 
 // ── Validasi token ────────────────────────────────────────────
 // Endpoint ini terbuka di internet, jadi wajib diproteksi. Token disimpan di
@@ -49,58 +50,7 @@ if (empty($nomor) || empty($pesan) || $is_group || $nomor === $device_number || 
 $pdo = db();
 
 // ── Fungsi kirim WA (dual gateway) ────────────────────────────
-function kirim_wa(string $nomor, string $pesan): void {
-    $gateway = get_pengaturan('wa_gateway', 'fonnte');
-
-    // ── WA Gateway sendiri (via elearning-bridge di X200MA lewat Tailscale) ──
-    if ($gateway === 'wagateway') {
-        $url   = get_pengaturan('wa_gateway_send_url', '');
-        $token = get_pengaturan('wa_gateway_send_token', '');
-        if ($url === '' || $token === '') {
-            error_log('[kirim_wa] wa_gateway_send_url/token belum diset');
-            return;
-        }
-        $ch = curl_init($url);
-        curl_setopt_array($ch, [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_POST           => true,
-            CURLOPT_POSTFIELDS     => json_encode(['target' => $nomor, 'message' => $pesan]),
-            CURLOPT_HTTPHEADER     => [
-                'Content-Type: application/json',
-                'Authorization: Bearer ' . $token,
-            ],
-            CURLOPT_TIMEOUT        => 15,
-        ]);
-        $resp = curl_exec($ch);
-        if ($resp === false) error_log('[kirim_wa] gateway CURL: ' . curl_error($ch));
-        curl_close($ch);
-        return;
-    }
-
-    if ($gateway === 'whacenter') {
-        $ch = curl_init(WHACENTER_URL);
-        curl_setopt_array($ch, [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_POST           => true,
-            CURLOPT_POSTFIELDS     => [
-                'device_id' => WHACENTER_DEVICE_ID,
-                'number'    => $nomor,
-                'message'   => $pesan,
-            ],
-        ]);
-    } else {
-        // Default: Fonnte
-        $ch = curl_init(FONNTE_URL);
-        curl_setopt_array($ch, [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_POST           => true,
-            CURLOPT_HTTPHEADER     => ['Authorization: ' . FONNTE_TOKEN],
-            CURLOPT_POSTFIELDS     => ['target' => $nomor, 'message' => $pesan],
-        ]);
-    }
-    curl_exec($ch);
-    curl_close($ch);
-}
+// kirim_wa() dipindah ke includes/wa.php (dipakai juga oleh cron ringkasan)
 
 // ── Fungsi get/set/hapus session ───────────────────────────────
 function get_wa_session(PDO $pdo, string $nomor): ?array {

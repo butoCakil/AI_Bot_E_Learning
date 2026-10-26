@@ -68,6 +68,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi'])) {
         set_pengaturan('wa_ai_model',    trim($_POST['wa_ai_model']    ?? 'llama-3.1-8b-instant'));
         set_pengaturan('wa_ai_prompt',   trim($_POST['wa_ai_prompt']   ?? ''));
         $pesan_akun = '✓ Pengaturan AI berhasil disimpan.';
+    } elseif ($_POST['aksi'] === 'setting_ringkasan_wa') {
+        $jam_r = trim($_POST['wa_ringkasan_jam'] ?? '15:30');
+        if (!preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', $jam_r)) $jam_r = '15:30';
+        set_pengaturan('wa_ringkasan_aktif', isset($_POST['wa_ringkasan_aktif']) ? '1' : '0');
+        set_pengaturan('wa_ringkasan_jam', $jam_r);
+        set_pengaturan('wa_ringkasan_jeda_detik', (string) max(10, min(300, (int) ($_POST['wa_ringkasan_jeda_detik'] ?? 30))));
+        $pesan_akun = '✓ Pengaturan ringkasan WA disimpan.';
+    } elseif ($_POST['aksi'] === 'paksa_ringkasan_wa') {
+        set_pengaturan('wa_ringkasan_paksa', '1');
+        $pesan_akun = '✓ Ringkasan WA dijadwalkan — dikirim dalam ±5 menit, satu per satu.';
     } elseif ($_POST['aksi'] === 'setting_wa_gateway') {
         set_pengaturan('wa_bot_nomor', trim($_POST['wa_bot_nomor'] ?? ''));
         set_pengaturan('wa_gateway',   trim($_POST['wa_gateway']   ?? 'fonnte'));
@@ -1147,6 +1157,65 @@ include __DIR__ . '/includes/topbar_guru.php';
 
 <!-- ═══════════ TAB 7: WA BOT & AI ═══════════ -->
 <div id="tab-wabot" class="tab-panel">
+
+    <?php
+    // ── Ringkasan feedback harian (WhatsApp) ──
+    $rw_aktif = get_pengaturan('wa_ringkasan_aktif', '0') === '1';
+    $rw_jam   = get_pengaturan('wa_ringkasan_jam', '15:30');
+    $rw_jeda  = (int) get_pengaturan('wa_ringkasan_jeda_detik', '30');
+    $rw_log   = get_pengaturan('wa_ringkasan_log', '');
+    $rw_paksa = get_pengaturan('wa_ringkasan_paksa', '0') === '1';
+    $rw_antre = (int) $pdo->query("
+        SELECT COUNT(DISTINCT f.user_id) FROM feedback_guru f JOIN users u ON u.id = f.user_id
+        WHERE f.wa_dikirim_at IS NULL AND f.dinilai_at >= NOW() - INTERVAL 7 DAY
+          AND (f.dibaca_at IS NULL OR f.minta_revisi = 1)
+          AND u.nomor_wa IS NOT NULL AND u.nomor_wa <> ''
+    ")->fetchColumn();
+    $rw_wa    = (int) $pdo->query("SELECT COUNT(*) FROM users WHERE role = 'siswa' AND nomor_wa IS NOT NULL AND nomor_wa <> ''")->fetchColumn();
+    $rw_siswa = (int) $pdo->query("SELECT COUNT(*) FROM users WHERE role = 'siswa'")->fetchColumn();
+    ?>
+    <div class="card" style="margin-bottom:16px">
+        <div class="card-h" style="margin-bottom:10px"><h3><i class="icon-bot"></i> Ringkasan feedback harian (WhatsApp)</h3></div>
+        <p style="font-size:12.5px;color:var(--abu);line-height:1.6;margin-bottom:14px">
+            Satu pesan per siswa per hari, berisi feedback baru yang belum dibaca di aplikasi, dikelompokkan per topik.
+            Dikirim satu per satu dengan jeda agar nomor bot aman.
+        </p>
+        <div class="stat-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:16px">
+            <div class="card" style="margin:0;border-left:4px solid var(--teal)">
+                <div class="stat-lbl">Siswa terhubung WA</div>
+                <div style="font-weight:800;font-size:15px;margin-top:4px"><?= $rw_wa ?> / <?= $rw_siswa ?></div>
+            </div>
+            <div class="card" style="margin:0;border-left:4px solid var(--amber)">
+                <div class="stat-lbl">Menunggu dikirim</div>
+                <div style="font-weight:800;font-size:15px;margin-top:4px"><?= $rw_antre ?> siswa</div>
+                <?php if ($rw_antre > 1): ?><div style="font-size:11px;color:var(--abu-muda)">± <?= (int) ceil($rw_antre * $rw_jeda / 60) ?> menit</div><?php endif; ?>
+            </div>
+            <div class="card" style="margin:0;border-left:4px solid var(--biru)">
+                <div class="stat-lbl">Pengiriman terakhir</div>
+                <div style="font-weight:700;font-size:12.5px;margin-top:4px"><?= htmlspecialchars($rw_log !== '' ? $rw_log : 'Belum pernah') ?></div>
+            </div>
+        </div>
+
+        <form method="POST" style="display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end">
+            <input type="hidden" name="aksi" value="setting_ringkasan_wa">
+            <label class="cbx" style="margin-bottom:8px"><input type="checkbox" name="wa_ringkasan_aktif" <?= $rw_aktif ? 'checked' : '' ?>> Aktifkan pengiriman harian</label>
+            <div class="fg" style="margin:0"><label>Jam kirim (WIB)</label><input type="time" name="wa_ringkasan_jam" value="<?= htmlspecialchars($rw_jam) ?>" required></div>
+            <div class="fg" style="margin:0"><label>Jeda antarpesan (detik)</label><input type="number" name="wa_ringkasan_jeda_detik" min="10" max="300" value="<?= $rw_jeda ?>" style="width:110px"></div>
+            <button type="submit" class="btn btn-3 btn-sm"><i class="icon-save"></i> Simpan</button>
+        </form>
+
+        <form method="POST" style="margin-top:14px;display:flex;flex-wrap:wrap;gap:10px;align-items:center"
+              onsubmit="return confirm('Kirim ringkasan sekarang ke <?= $rw_antre ?> siswa? Pesan dikirim satu per satu.')">
+            <input type="hidden" name="aksi" value="paksa_ringkasan_wa">
+            <button type="submit" class="btn btn-2 btn-sm" <?= $rw_antre > 0 && !$rw_paksa ? '' : 'disabled' ?>><i class="icon-send"></i> Kirim ringkasan sekarang</button>
+            <?php if ($rw_paksa): ?>
+                <span style="font-size:12.5px;color:var(--abu)">Sudah dijadwalkan — berjalan dalam ±5 menit.</span>
+            <?php endif; ?>
+        </form>
+        <p style="font-size:11.5px;color:var(--abu-muda);margin-top:10px;line-height:1.6">
+            Siswa menghubungkan nomornya sendiri lewat bot dengan mengirim <b>daftar NIS PASSWORD</b> ke nomor bot (terverifikasi dari nomor pengirim).
+        </p>
+    </div>
 
     <!-- STATUS & KONFIGURASI GATEWAY -->
     <div class="card" style="margin-bottom:16px">

@@ -118,8 +118,27 @@ include __DIR__ . '/includes/topbar_siswa.php';
                 <div class="tags" style="margin-top:7px">
                     <span class="tag"><i class="icon-id-card"></i> <?= htmlspecialchars($_SESSION['nis']) ?></span>
                     <span class="tag"><i class="icon-users"></i> <?= htmlspecialchars($_SESSION['kelas'] ?? '-') ?></span>
-                    <?php if (!empty($_SESSION['nomor_wa'])): ?>
-                        <span class="tag"><i class="icon-phone"></i> <?= htmlspecialchars($_SESSION['nomor_wa']) ?></span>
+                    <?php
+                    // Nomor WA dibaca dari DB (bisa didaftarkan lewat bot setelah login)
+                    $st_wa = db()->prepare("SELECT nomor_wa FROM users WHERE id = ?");
+                    $st_wa->execute([(int) $_SESSION['user_id']]);
+                    $nomor_wa_db = (string) $st_wa->fetchColumn();
+                    $_SESSION['nomor_wa'] = $nomor_wa_db;
+                    $bot_wa = preg_replace('/[^0-9]/', '', (string) get_pengaturan('wa_bot_nomor', ''));
+                    ?>
+                    <?php if ($nomor_wa_db !== ''): ?>
+                        <span class="tag"><i class="icon-phone"></i> <?= htmlspecialchars($nomor_wa_db) ?></span>
+                    <?php else: ?>
+                        <?php if ($bot_wa !== ''): ?>
+                            <a class="tag" style="background:#DCFCE7;color:#166534;text-decoration:none;font-weight:700"
+                               href="https://wa.me/<?= $bot_wa ?>?text=<?= rawurlencode('daftar ' . $_SESSION['nis'] . ' ') ?>"
+                               target="_blank" rel="noopener">
+                                <i class="icon-phone"></i> Hubungkan WhatsApp
+                            </a>
+                        <?php endif; ?>
+                        <span style="flex-basis:100%;font-size:11.5px;color:var(--abu-muda);line-height:1.5;margin-top:4px">
+                            Kirim <b>daftar <?= htmlspecialchars($_SESSION['nis']) ?> PASSWORDMU</b> ke bot WhatsApp agar menerima ringkasan feedback dari guru.
+                        </span>
                     <?php endif; ?>
                 </div>
             </div>
