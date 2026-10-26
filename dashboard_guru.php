@@ -1196,7 +1196,7 @@ include __DIR__ . '/includes/topbar_guru.php';
             </div>
         </div>
 
-        <form method="POST" style="display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end">
+        <form method="POST" action="dashboard_guru.php#wabot" style="display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end">
             <input type="hidden" name="aksi" value="setting_ringkasan_wa">
             <label class="cbx" style="margin-bottom:8px"><input type="checkbox" name="wa_ringkasan_aktif" <?= $rw_aktif ? 'checked' : '' ?>> Aktifkan pengiriman harian</label>
             <div class="fg" style="margin:0"><label>Jam kirim (WIB)</label><input type="time" name="wa_ringkasan_jam" value="<?= htmlspecialchars($rw_jam) ?>" required></div>
@@ -1204,7 +1204,7 @@ include __DIR__ . '/includes/topbar_guru.php';
             <button type="submit" class="btn btn-3 btn-sm"><i class="icon-save"></i> Simpan</button>
         </form>
 
-        <form method="POST" style="margin-top:14px;display:flex;flex-wrap:wrap;gap:10px;align-items:center"
+        <form method="POST" action="dashboard_guru.php#wabot" style="margin-top:14px;display:flex;flex-wrap:wrap;gap:10px;align-items:center"
               onsubmit="return confirm('Kirim ringkasan sekarang ke <?= $rw_antre ?> siswa? Pesan dikirim satu per satu.')">
             <input type="hidden" name="aksi" value="paksa_ringkasan_wa">
             <button type="submit" class="btn btn-2 btn-sm" <?= $rw_antre > 0 && !$rw_paksa ? '' : 'disabled' ?>><i class="icon-send"></i> Kirim ringkasan sekarang</button>
@@ -1478,6 +1478,21 @@ include __DIR__ . '/includes/topbar_guru.php';
 
 <script>
 // ── Tab switching (identik dgn asli) ─────────────────────────
+// Buka tab sesuai #hash (mis. setelah form disimpan) & catat tab aktif di URL
+document.addEventListener('DOMContentLoaded', function () {
+    var id = (location.hash || '').replace('#', '');
+    if (id && document.getElementById('tab-' + id)) {
+        var btn = document.querySelector('.tab-btn[onclick*="\'' + id + '\'"]');
+        if (btn) bukaTab(id, btn);
+    }
+    document.querySelectorAll('.tab-btn[onclick^="bukaTab"]').forEach(function (b) {
+        b.addEventListener('click', function () {
+            var m = (b.getAttribute('onclick') || '').match(/bukaTab\('([^']+)'/);
+            if (m) history.replaceState(null, '', '#' + m[1]);
+        });
+    });
+});
+
 function bukaTab(id, el) {
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('aktif'));
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('aktif'));
