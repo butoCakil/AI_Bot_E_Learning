@@ -115,3 +115,39 @@ function tandai_selesai_jika_lengkap(int $user_id, array $konten, string $topik)
     }
     return $s;
 }
+
+// Render tabel-input dari isi konten dengan jawaban siswa di dalam sel (untuk guru).
+// Indeks sama persis dengan ti_daftar_sel().
+function ti_render_terisi(?string $html, array $jawaban): string {
+    if (!$html || stripos($html, 'tabel-input') === false) return '';
+    $dom = new DOMDocument();
+    libxml_use_internal_errors(true);
+    $dom->loadHTML('<?xml encoding="utf-8"?><div>' . $html . '</div>', LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD);
+    libxml_clear_errors();
+    $xp = new DOMXPath($dom);
+
+    $out    = '';
+    $tables = $xp->query('//table[contains(concat(" ", normalize-space(@class), " "), " tabel-input ")]');
+    foreach ($tables as $ti => $tb) {
+        foreach ($xp->query('.//tr', $tb) as $ri => $tr) {
+            $ci = 0;
+            foreach (iterator_to_array($tr->childNodes) as $cell) {
+                if (!($cell instanceof DOMElement)) continue;
+                $tag = strtolower($cell->nodeName);
+                if ($tag !== 'td' && $tag !== 'th') continue;
+                if (preg_match('/(^|\s)ti-isi(\s|$)/', $cell->getAttribute('class'))) {
+                    $v = trim((string) ($jawaban["t{$ti}-r{$ri}-c{$ci}"] ?? ''));
+                    while ($cell->firstChild) $cell->removeChild($cell->firstChild);
+                    $cell->appendChild($dom->createTextNode($v === '' ? '—' : $v));
+                    $cell->setAttribute('style', $v === ''
+                        ? 'background:#FEF3C7;color:#B45309;font-weight:700'
+                        : 'background:#ECFDF5;color:#065F46;font-weight:700');
+                }
+                $ci++;
+            }
+        }
+        $tb->setAttribute('style', 'border-collapse:collapse;width:100%');
+        $out .= $dom->saveHTML($tb);
+    }
+    return $out;
+}

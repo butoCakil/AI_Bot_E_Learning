@@ -517,6 +517,76 @@ include __DIR__ . '/includes/topbar_guru.php';
         <div class="kosong" style="padding:30px"><i class="icon-paperclip"></i><b>Belum ada submission</b><p>Belum ada siswa yang mengupload jobsheet.</p></div>
         <?php endif; ?>
     </div>
+
+    <?php
+    // ── Isian tabel input siswa ──
+    require_once __DIR__ . '/includes/syarat_konten.php';
+    $isian_tabel = $pdo->query("
+        SELECT t.user_id, t.content_id, t.jawaban, t.lengkap, t.updated_at,
+               u.nama, u.nis, u.kelas, c.judul, c.tipe, c.isi
+        FROM tabel_input_jawaban t
+        JOIN users u   ON u.id = t.user_id
+        JOIN content c ON c.id = t.content_id
+        ORDER BY t.updated_at DESC
+    ")->fetchAll();
+    $kelas_isian = array_values(array_unique(array_filter(array_column($isian_tabel, 'kelas'))));
+    sort($kelas_isian);
+    ?>
+    <div class="card" style="margin-top:16px">
+        <div class="card-h" style="margin-bottom:14px;display:flex;flex-wrap:wrap;gap:10px;align-items:center">
+            <h3><i class="icon-clipboard-check"></i> Isian tabel siswa (<?= count($isian_tabel) ?>)</h3>
+            <?php if ($kelas_isian): ?>
+                <select onchange="filterIsian(this.value)"
+                        style="margin-left:auto;padding:6px 10px;font-size:12.5px;border:2px solid var(--garis);border-radius:6px;font-family:inherit">
+                    <option value="">Semua kelas</option>
+                    <?php foreach ($kelas_isian as $kl): ?>
+                        <option value="<?= htmlspecialchars($kl) ?>"><?= htmlspecialchars($kl) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            <?php endif; ?>
+        </div>
+
+        <?php if ($isian_tabel): ?>
+            <div class="ti-review">
+                <?php foreach ($isian_tabel as $r):
+                    $jwb = json_decode($r['jawaban'], true) ?: [];
+                    $tabel_html = ti_render_terisi($r['isi'], $jwb);
+                ?>
+                    <details class="ti-item" data-kelas="<?= htmlspecialchars($r['kelas'] ?? '') ?>"
+                             style="border:1px solid var(--garis);border-radius:10px;padding:10px 14px;margin-bottom:8px">
+                        <summary style="cursor:pointer;font-size:13px;line-height:1.6">
+                            <strong><?= htmlspecialchars($r['nama']) ?></strong>
+                            <small style="color:var(--abu-muda)"><?= htmlspecialchars($r['nis']) ?> · <?= htmlspecialchars($r['kelas'] ?? '-') ?></small>
+                            — <?= htmlspecialchars(mb_strimwidth($r['judul'] ?? '-', 0, 45, '…')) ?>
+                            <small style="color:var(--abu-muda)">(<?= htmlspecialchars($r['tipe']) ?>)</small>
+                            · <b style="font-size:11.5px;color:<?= $r['lengkap'] ? 'var(--teal)' : '#B45309' ?>">
+                                <?= $r['lengkap'] ? 'Lengkap' : 'Belum lengkap' ?></b>
+                            · <small style="color:var(--abu-muda)"><?= date('d/m/y H:i', strtotime($r['updated_at'])) ?></small>
+                        </summary>
+                        <div style="margin-top:10px;overflow-x:auto">
+                            <?= $tabel_html !== '' ? $tabel_html
+                                : '<em style="font-size:12.5px;color:var(--abu-muda)">Tabel isian pada konten ini sudah diubah/dihapus.</em>' ?>
+                        </div>
+                    </details>
+                <?php endforeach; ?>
+            </div>
+        <?php else: ?>
+            <div class="kosong" style="padding:30px"><i class="icon-clipboard-check"></i><b>Belum ada isian</b><p>Belum ada siswa yang mengisi tabel.</p></div>
+        <?php endif; ?>
+    </div>
+
+    <style>
+        .ti-review table { font-size: 12.5px; margin-bottom: 6px; }
+        .ti-review th, .ti-review td { border: 1px solid var(--garis); padding: 6px 9px; text-align: left; }
+        .ti-review th { background: var(--biru-muda, #EFF6FF); }
+    </style>
+    <script>
+    function filterIsian(k) {
+        document.querySelectorAll('.ti-item').forEach(function (d) {
+            d.style.display = (!k || d.getAttribute('data-kelas') === k) ? '' : 'none';
+        });
+    }
+    </script>
 </div>
 
 <!-- ═══════════ TAB 4: PENGATURAN MATERI ═══════════ -->

@@ -24,7 +24,7 @@ $urut_topik     = array_flip(array_keys($nama_topik_map));
 $item = $pdo->query("
     SELECT id, judul, tipe, topik, urutan_default
     FROM content
-    WHERE aktif = 1 AND tipe IN ('evaluasi','jobsheet')
+    WHERE aktif = 1 AND (tipe IN ('evaluasi','jobsheet') OR perlu_upload = 1)
 ")->fetchAll();
 
 usort($item, function ($a, $b) use ($urut_topik) {
@@ -66,7 +66,7 @@ $sheet->setTitle('Rekap Nilai');
 
 $header = ['NIS', 'Nama Lengkap', 'Kelas', 'Profil'];
 foreach ($item as $it) {
-    $header[] = ($it['tipe'] === 'evaluasi' ? 'Eval: ' : 'Job: ')
+    $header[] = ($it['tipe'] === 'evaluasi' ? 'Eval: ' : ($it['tipe'] === 'jobsheet' ? 'Job: ' : 'Upload: '))
               . ($nama_topik_map[$it['topik']] ?? $it['topik']);
 }
 $header = array_merge($header, ['Pre-Test', 'Post-Test', 'N-Gain', 'Kategori']);

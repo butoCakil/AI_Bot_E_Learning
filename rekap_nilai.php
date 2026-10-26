@@ -17,7 +17,7 @@ $urut_topik     = array_flip(array_keys($nama_topik_map));
 $item_nilai = $pdo->query("
     SELECT id, judul, tipe, topik, urutan_default
     FROM content
-    WHERE aktif = 1 AND tipe IN ('evaluasi','jobsheet')
+    WHERE aktif = 1 AND (tipe IN ('evaluasi','jobsheet') OR perlu_upload = 1)
 ")->fetchAll();
 
 usort($item_nilai, function ($a, $b) use ($urut_topik) {
@@ -119,7 +119,7 @@ include __DIR__ . '/includes/topbar_guru.php';
                         <th>Kelas</th>
                         <?php foreach ($item_nilai as $it): ?>
                             <th style="text-align:center" title="<?= htmlspecialchars($it['topik_nama'] . ' — ' . $it['judul']) ?>">
-                                <span style="font-size:9px;display:block;color:var(--abu-muda)"><?= $it['tipe'] === 'evaluasi' ? 'EVAL' : 'JOB' ?></span>
+                                <span style="font-size:9px;display:block;color:var(--abu-muda)"><?= $it['tipe'] === 'evaluasi' ? 'EVAL' : ($it['tipe'] === 'jobsheet' ? 'JOB' : 'UPLOAD') ?></span>
                                 <?= htmlspecialchars(mb_strimwidth($it['topik_nama'], 0, 13, '…')) ?>
                             </th>
                         <?php endforeach; ?>
