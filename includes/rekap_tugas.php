@@ -242,3 +242,76 @@ function rt_detail(int $uid): ?array {
         'topik' => $blok,
     ];
 }
+
+// ── Nilai topik & nilai akhir (versi sederhana) ──────────────────
+// Nilai topik  = rata-rata komponen yang SUDAH dinilai pada jalur siswa di topik itu:
+//                evaluasi (persentase), tugas upload (nilai guru),
+//                tabel saja (kesesuaian: Sesuai 85, Hampir sesuai 70, Belum sesuai 55).
+// Nilai akhir  = rata-rata nilai topik. Post-test TIDAK dicampur (data N-Gain penelitian).
+// Komponen yang belum dikerjakan/dinilai tidak dihitung; jumlahnya ditampilkan (dinilai/total).
+if (!defined('KKM')) define('KKM', 70);
+
+function rt_nilai_kesesuaian(int $p): ?int {
+    return [1 => 55, 2 => 70, 3 => 85][$p] ?? null;
+}
+
+function rt_nilai(array $siswa, ?array $d = null): array {
+    $konten = rt_konten();
+    $jalur  = rt_jalur();
+    $profil = rt_profil();
+    $d      = $d ?? rt_data_kerja();
+    $out    = [];
+
+    foreach ($siswa as $s) {
+        $uid   = (int) $s['id'];
+        $pg    = $profil[$uid] ?? null;
+        $topik = [];
+
+        if ($pg && isset($jalur[$pg])) {
+            foreach ($jalur[$pg] as $tp => $ids) {
+                $skor  = [];
+                $total = 0;
+                foreach ($ids as $cid) {
+                    if (!isset($konten[$cid])) continue;
+                    $k = $konten[$cid];
+                    if ($k['tipe'] === 'evaluasi') {
+                        $total++;
+                        if (isset($d['eval'][$uid][$cid])) $skor[] = (float) $d['eval'][$uid][$cid];
+                    } elseif ($k['perlu_upload']) {
+                        $total++;
+                        $up = $d['upload'][$uid][$cid] ?? null;
+                        if ($up && $up['nilai'] !== null) $skor[] = (float) $up['nilai'];
+                    } elseif ($k['ada_tabel']) {
+                        $total++;
+                        $fb = $d['fb'][$uid][$cid] ?? null;
+                        if ($fb && $fb['skala'] === 'kesesuaian') {
+                            $n = rt_nilai_kesesuaian((int) $fb['predikat']);
+                            if ($n !== null) $skor[] = (float) $n;
+                        }
+                    }
+                }
+                if ($total === 0) continue;
+                $topik[$tp] = [
+                    'nilai'   => $skor ? round(array_sum($skor) / count($skor), 1) : null,
+                    'dinilai' => count($skor),
+                    'total'   => $total,
+                ];
+            }
+        }
+
+        $vals  = array_values(array_filter(array_column($topik, 'nilai'), function ($v) { return $v !== null; }));
+        $akhir = $vals ? round(array_sum($vals) / count($vals), 1) : null;
+        $out[$uid] = [
+            'topik'  => $topik,
+            'akhir'  => $akhir,
+            'tuntas' => $akhir === null ? null : $akhir >= KKM,
+        ];
+    }
+    return $out;
+}
+
+// Format angka gaya Indonesia: 77.8 → "77,8", 85.0 → "85"
+function rt_fmt($n): string {
+    if ($n === null) return '–';
+    return rtrim(rtrim(number_format((float) $n, 1, ',', ''), '0'), ',');
+}

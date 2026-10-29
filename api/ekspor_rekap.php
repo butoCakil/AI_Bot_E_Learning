@@ -2,6 +2,9 @@
 session_start();
 require_once dirname(__DIR__) . '/config/config.php';
 require_once dirname(__DIR__) . '/includes/functions.php';
+require_once dirname(__DIR__) . '/includes/syarat_konten.php';
+require_once dirname(__DIR__) . '/includes/feedback.php';
+require_once dirname(__DIR__) . '/includes/rekap_tugas.php';
 require_once dirname(__DIR__) . '/vendor/autoload.php';
 
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
@@ -59,6 +62,12 @@ $siswa = $pdo->query("
     ORDER BY u.kelas, u.nama
 ")->fetchAll();
 
+// ── Nilai topik & nilai akhir (rumus sama dengan Rekap & Profil) ──
+$nilai_siswa = rt_nilai($siswa);
+$ada_topik = [];
+foreach (rt_jalur() as $tps) { foreach ($tps as $tp => $ids) $ada_topik[$tp] = true; }
+$topik_nilai = array_values(array_filter(array_keys($nama_topik_map), function ($t) use ($ada_topik) { return isset($ada_topik[$t]); }));
+
 // ── Susun spreadsheet ──
 $ss    = new Spreadsheet();
 $sheet = $ss->getActiveSheet();
@@ -70,6 +79,8 @@ foreach ($item as $it) {
               . ($nama_topik_map[$it['topik']] ?? $it['topik']);
 }
 $header = array_merge($header, ['Pre-Test', 'Post-Test', 'N-Gain', 'Kategori']);
+foreach ($topik_nilai as $tp) $header[] = 'Nilai: ' . ($nama_topik_map[$tp] ?? $tp);
+$header = array_merge($header, ['Nilai Akhir', 'Ketuntasan (KKM ' . KKM . ')']);
 
 $sheet->fromArray($header, null, 'A1');
 
@@ -114,6 +125,13 @@ foreach ($siswa as $s) {
             '', '',
         ]);
     }
+    $nv = $nilai_siswa[(int) $s['id']] ?? null;
+    foreach ($topik_nilai as $tp) {
+        $t = $nv['topik'][$tp] ?? null;
+        $data[] = ($t && $t['nilai'] !== null) ? $t['nilai'] : '';
+    }
+    $data[] = ($nv && $nv['akhir'] !== null) ? $nv['akhir'] : '';
+    $data[] = ($nv && $nv['akhir'] !== null) ? ($nv['tuntas'] ? 'Tuntas' : 'Belum tuntas') : '';
     $sheet->fromArray($data, null, 'A' . $baris);
     $baris++;
 }

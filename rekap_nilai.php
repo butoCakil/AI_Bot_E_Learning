@@ -2,6 +2,9 @@
 session_start();
 require_once 'config/config.php';
 require_once 'includes/functions.php';
+require_once 'includes/syarat_konten.php';
+require_once 'includes/feedback.php';
+require_once 'includes/rekap_tugas.php';
 
 if (empty($_SESSION['role']) || $_SESSION['role'] !== 'guru') {
     header('Location: login_guru.php');
@@ -112,6 +115,13 @@ include __DIR__ . '/includes/topbar_guru.php';
 
         <div style="overflow-x:auto">
             <table id="tabel_rekap" class="gtable" style="width:100%;font-size:12px">
+                <?php
+                // Nilai topik & nilai akhir (rumus sama dengan Profil & Ekspor)
+                $nilai_siswa = rt_nilai($rekap_siswa);
+                $ada_topik = [];
+                foreach (rt_jalur() as $tps) { foreach ($tps as $tp => $ids) $ada_topik[$tp] = true; }
+                $topik_nilai = array_values(array_filter(array_keys($nama_topik_map), function ($t) use ($ada_topik) { return isset($ada_topik[$t]); }));
+                ?>
                 <thead>
                     <tr>
                         <th>NIS</th>
@@ -126,6 +136,10 @@ include __DIR__ . '/includes/topbar_guru.php';
                         <th style="text-align:center">Pre</th>
                         <th style="text-align:center">Post</th>
                         <th style="text-align:center">N-Gain</th>
+                        <?php foreach ($topik_nilai as $tp): ?>
+                            <th style="text-align:center" title="Rata-rata komponen yang sudah dinilai">Nilai <?= htmlspecialchars($nama_topik_map[$tp] ?? $tp) ?></th>
+                        <?php endforeach; ?>
+                        <th style="text-align:center">Nilai akhir</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -164,6 +178,25 @@ include __DIR__ . '/includes/topbar_guru.php';
                             echo '<span style="color:var(--garis)">–</span>';
                         }
                         ?>
+                        </td>
+                        <?php $nv = $nilai_siswa[(int) $s['id']] ?? null; ?>
+                        <?php foreach ($topik_nilai as $tp): $t = $nv['topik'][$tp] ?? null; ?>
+                            <td style="text-align:center">
+                                <?php if ($t && $t['nilai'] !== null): ?>
+                                    <b style="color:<?= $t['nilai'] < KKM ? 'var(--coral)' : 'inherit' ?>"><?= rt_fmt($t['nilai']) ?></b>
+                                    <span style="display:block;font-size:10px;color:var(--abu-muda)"><?= $t['dinilai'] ?>/<?= $t['total'] ?> dinilai</span>
+                                <?php else: ?>
+                                    <span style="color:var(--garis)">–</span>
+                                <?php endif; ?>
+                            </td>
+                        <?php endforeach; ?>
+                        <td style="text-align:center">
+                            <?php if ($nv && $nv['akhir'] !== null): ?>
+                                <b><?= rt_fmt($nv['akhir']) ?></b>
+                                <span style="display:block;font-size:10px;font-weight:700;color:<?= $nv['tuntas'] ? 'var(--teal)' : 'var(--coral)' ?>"><?= $nv['tuntas'] ? 'Tuntas' : 'Belum tuntas' ?></span>
+                            <?php else: ?>
+                                <span style="color:var(--garis)">–</span>
+                            <?php endif; ?>
                         </td>
                     </tr>
                 <?php endforeach; ?>

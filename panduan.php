@@ -204,7 +204,7 @@ body{font-family:'Segoe UI',sans-serif;background:var(--bg);color:var(--text);fo
       <tr><td>Skor Pre-Test</td><td>Nilai dari 12 soal pengetahuan awal</td></tr>
       <tr><td>Progress per Topik</td><td>Persentase materi yang sudah diselesaikan</td></tr>
       <tr><td>Skor Post-Test</td><td>Nilai akhir setelah pembelajaran</td></tr>
-      <tr><td>N-Gain</td><td>Indeks peningkatan hasil belajar (Hake, 1999)</td></tr>
+      <tr><td>N-Gain</td><td>Indeks peningkatan hasil belajar (Hake, 1998)</td></tr>
     </table>
   </div>
 </div>

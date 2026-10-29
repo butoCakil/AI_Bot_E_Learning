@@ -2,6 +2,9 @@
 session_start();
 require_once 'config/config.php';
 require_once 'includes/functions.php';
+require_once 'includes/syarat_konten.php';
+require_once 'includes/feedback.php';
+require_once 'includes/rekap_tugas.php';
 
 require_login();
 
@@ -205,7 +208,7 @@ include __DIR__ . '/includes/topbar_siswa.php';
                 </div>
 
                 <div style="background:var(--kanvas);border-radius:var(--r-sm);padding:12px 14px;font-size:12.5px;color:var(--abu);line-height:1.7">
-                    <b style="color:var(--tinta)">Perhitungan N-Gain (Hake, 1999)</b><br>
+                    <b style="color:var(--tinta)">Perhitungan N-Gain (Hake, 1998)</b><br>
                     g = (<?= $posttest['skor_pengetahuan'] ?> − <?= $posttest['skor_pre'] ?>) ÷ (12 − <?= $posttest['skor_pre'] ?>)
                     = <b style="color:<?= $warna_ng ?>"><?= number_format($ng, 4) ?></b>
                     → kategori <b style="color:<?= $warna_ng ?>"><?= $ngain_data['kategori'] ?></b>
@@ -250,6 +253,43 @@ include __DIR__ . '/includes/topbar_siswa.php';
         </div>
 
         <!-- REKAP EVALUASI -->
+        <?php
+        // ── Nilai belajar (rumus sama dengan Rekap Nilai guru) ──
+        $uid_nb  = (int) $_SESSION['user_id'];
+        $nb      = rt_nilai([['id' => $uid_nb]])[$uid_nb] ?? null;
+        $nama_tp = get_topik_list();
+        ?>
+        <?php if ($nb && $nb['topik']): ?>
+            <div class="sect"><i class="icon-award"></i> Nilai belajar</div>
+            <div class="card">
+                <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:14px">
+                    <div>
+                        <div style="font-size:12px;color:var(--abu-muda);font-weight:700">Nilai akhir</div>
+                        <div style="font-size:30px;font-weight:800;line-height:1.1;color:<?= $nb['akhir'] === null ? 'var(--abu-muda)' : ($nb['tuntas'] ? 'var(--teal)' : 'var(--coral)') ?>">
+                            <?= rt_fmt($nb['akhir']) ?>
+                        </div>
+                    </div>
+                    <?php if ($nb['akhir'] !== null): ?>
+                        <span class="tag <?= $nb['tuntas'] ? 'ok' : '' ?>" style="<?= $nb['tuntas'] ? '' : 'background:var(--coral-muda);color:var(--coral)' ?>">
+                            <?= $nb['tuntas'] ? 'Tuntas' : 'Belum tuntas' ?> · KKM <?= KKM ?>
+                        </span>
+                    <?php endif; ?>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:10px">
+                    <?php foreach ($nb['topik'] as $tp => $t): ?>
+                        <div style="display:flex;align-items:center;gap:10px;font-size:13.5px">
+                            <span style="flex:1;min-width:0;font-weight:700"><?= htmlspecialchars($nama_tp[$tp] ?? $tp) ?></span>
+                            <span style="font-size:11.5px;color:var(--abu-muda)"><?= $t['dinilai'] ?>/<?= $t['total'] ?> dinilai</span>
+                            <b style="min-width:42px;text-align:right;color:<?= $t['nilai'] === null ? 'var(--abu-muda)' : ($t['nilai'] < KKM ? 'var(--coral)' : 'inherit') ?>"><?= rt_fmt($t['nilai']) ?></b>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+                <p style="font-size:11.5px;color:var(--abu-muda);line-height:1.6;margin-top:12px">
+                    Nilai topik = rata-rata evaluasi, tugas, dan tabel yang sudah dinilai guru. Nilai akhir = rata-rata nilai topik.
+                </p>
+            </div>
+        <?php endif; ?>
+
         <div class="sect"><i class="icon-clipboard-list"></i> Rekap evaluasi</div>
         <?php if ($rekap_eval): ?>
             <div class="grid">

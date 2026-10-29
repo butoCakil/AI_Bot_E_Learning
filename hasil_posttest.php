@@ -125,7 +125,7 @@ include __DIR__ . '/includes/topbar_siswa.php';
     <!-- RUMUS -->
     <div class="card" style="background:var(--kanvas)">
         <div style="font-size:12.5px;color:var(--abu);line-height:1.8">
-            <b style="color:var(--tinta)">Perhitungan N-Gain (Hake, 1999)</b><br>
+            <b style="color:var(--tinta)">Perhitungan N-Gain (Hake, 1998)</b><br>
             g = (Skor Post − Skor Pre) ÷ (Skor Maks − Skor Pre)<br>
             g = (<?= $skor_post ?> − <?= $skor_pre ?>) ÷ (12 − <?= $skor_pre ?>)
             = <b style="color:<?= $warna_ng ?>"><?= number_format($ngain, 4) ?></b>
