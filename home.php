@@ -337,17 +337,52 @@ include __DIR__ . '/includes/topbar_siswa.php';
         </div>
     </div>
 
-    <!-- TOMBOL AKSI -->
+    <!-- TOMBOL AKSI (menyesuaikan keadaan siswa) -->
+    <?php
+    // Prioritas: revisi > lanjut materi > post-test > hasil belajar
+    $revisi_pertama = null;
+    $jml_revisi     = 0;
+    foreach (($notif_fb ?? []) as $tp_r => $nf_r) {
+        foreach ($nf_r['item'] as $it_r) {
+            if ((int) $it_r['minta_revisi'] === 1) {
+                $jml_revisi++;
+                if (!$revisi_pertama) $revisi_pertama = ['topik' => $tp_r, 'content_id' => (int) $it_r['content_id']];
+            }
+        }
+    }
+    $materi_tuntas = $persen_total >= 100;
+    ?>
     <div class="cta">
-        <?php if ($last_konten): ?>
-            <a href="materi.php?topik=<?= urlencode($last_konten['topik']) ?>&konten=<?= (int) $last_konten['content_id'] ?>" class="btn btn-1">
-                <i class="icon-play"></i> Lanjutkan belajar
+        <?php if ($revisi_pertama): ?>
+            <a href="materi.php?topik=<?= urlencode($revisi_pertama['topik']) ?>&konten=<?= $revisi_pertama['content_id'] ?>"
+               class="btn btn-1" style="background:#7C3AED;border-color:#7C3AED">
+                <i class="icon-clipboard-check"></i> Perbaiki tugas (<?= $jml_revisi ?>)
             </a>
+        <?php elseif (!$materi_tuntas): ?>
+            <?php if ($last_konten): ?>
+                <a href="materi.php?topik=<?= urlencode($last_konten['topik']) ?>&konten=<?= (int) $last_konten['content_id'] ?>" class="btn btn-1">
+                    <i class="icon-play"></i> Lanjutkan belajar
+                </a>
+            <?php else: ?>
+                <a href="materi.php" class="btn btn-1"><i class="icon-play"></i> Mulai belajar</a>
+            <?php endif; ?>
+        <?php elseif (!$posttest_done && $akses_posttest['boleh']): ?>
+            <a href="posttest.php" class="btn btn-3"><i class="icon-target"></i> Kerjakan post-test</a>
+        <?php elseif (!$posttest_done): ?>
+            <a href="materi.php" class="btn btn-1"><i class="icon-book-open"></i> Tinjau materi</a>
         <?php else: ?>
-            <a href="materi.php" class="btn btn-1"><i class="icon-play"></i> Mulai belajar</a>
+            <a href="profil.php" class="btn btn-3"><i class="icon-award"></i> Lihat hasil belajarmu</a>
+            <a href="materi.php" class="btn btn-2" style="flex:0 0 auto" title="Tinjau materi"><i class="icon-book-open"></i></a>
         <?php endif; ?>
-        <a href="profil.php" class="btn btn-2" style="flex:0 0 auto" title="Profil saya"><i class="icon-user"></i></a>
+        <?php if (!($materi_tuntas && $posttest_done && !$revisi_pertama)): ?>
+            <a href="profil.php" class="btn btn-2" style="flex:0 0 auto" title="Profil saya"><i class="icon-user"></i></a>
+        <?php endif; ?>
     </div>
+    <?php if (!$revisi_pertama && $materi_tuntas && !$posttest_done && !$akses_posttest['boleh'] && !empty($akses_posttest['alasan'])): ?>
+        <p style="font-size:12.5px;color:var(--abu);text-align:center;margin-top:8px">
+            <i class="icon-lock"></i> <?= htmlspecialchars($akses_posttest['alasan']) ?>
+        </p>
+    <?php endif; ?>
 
     <!-- PROGRESS PER TOPIK -->
     <div class="sect"><i class="icon-library"></i> Progress per topik</div>
