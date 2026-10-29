@@ -31,8 +31,11 @@ if (fb_terkunci($user_id, $content_id)) gagal(423, 'Isian sudah dinilai guru dan
 // Hanya simpan kunci yang memang ada di konten
 $bersih = [];
 $kosong = 0;
+$detail = ti_detail_sel($konten['isi'] ?? '');
 foreach ($sel as $k) {
     $v = mb_substr(trim((string) ($input[$k] ?? '')), 0, 200);
+    $pil = $detail[$k]['pilihan'] ?? null;
+    if ($pil && $v !== '' && !in_array($v, $pil, true)) gagal(400, 'Pilihan isian tidak valid, muat ulang halaman');
     $bersih[$k] = $v;
     if ($v === '') $kosong++;
 }

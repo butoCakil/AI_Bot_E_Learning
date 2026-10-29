@@ -13,9 +13,10 @@ function ambil_konten(int $content_id): ?array {
     return $r ?: null;
 }
 
-// Daftar kunci sel input dari HTML konten: "t{tabel}-r{baris}-c{kolom}"
+// Detail sel input: "t{tabel}-r{baris}-c{kolom}" => ['pilihan' => [...] | null]
+// Sel .ti-pilih: teks sel berisi opsi dipisah "|" (mis. "Nyala | Mati").
 // Urutan indeks HARUS sama dengan JS di materi.php (document order).
-function ti_daftar_sel(?string $html): array {
+function ti_detail_sel(?string $html): array {
     if (!$html || stripos($html, 'tabel-input') === false) return [];
     $dom = new DOMDocument();
     libxml_use_internal_errors(true);
@@ -23,7 +24,7 @@ function ti_daftar_sel(?string $html): array {
     libxml_clear_errors();
     $xp = new DOMXPath($dom);
 
-    $keys   = [];
+    $out    = [];
     $tables = $xp->query('//table[contains(concat(" ", normalize-space(@class), " "), " tabel-input ")]');
     foreach ($tables as $ti => $tb) {
         foreach ($xp->query('.//tr', $tb) as $ri => $tr) {
@@ -32,14 +33,26 @@ function ti_daftar_sel(?string $html): array {
                 if (!($cell instanceof DOMElement)) continue;
                 $tag = strtolower($cell->nodeName);
                 if ($tag !== 'td' && $tag !== 'th') continue;
-                if (preg_match('/(^|\s)ti-isi(\s|$)/', $cell->getAttribute('class'))) {
-                    $keys[] = "t{$ti}-r{$ri}-c{$ci}";
+                $cls = $cell->getAttribute('class');
+                if (preg_match('/(^|\s)ti-isi(\s|$)/', $cls)) {
+                    $pil = null;
+                    if (preg_match('/(^|\s)ti-pilih(\s|$)/', $cls)) {
+                        $teks = str_replace("\xC2\xA0", ' ', $cell->textContent);
+                        $pil  = array_values(array_filter(array_map('trim', explode('|', $teks)), 'strlen'));
+                        if (count($pil) < 2) $pil = null;
+                    }
+                    $out["t{$ti}-r{$ri}-c{$ci}"] = ['pilihan' => $pil];
                 }
                 $ci++;
             }
         }
     }
-    return $keys;
+    return $out;
+}
+
+// Daftar kunci sel input (dipakai syarat, simpan, rekap)
+function ti_daftar_sel(?string $html): array {
+    return array_keys(ti_detail_sel($html));
 }
 
 // Jawaban tabel milik siswa untuk satu konten

@@ -776,16 +776,48 @@ include __DIR__ . '/includes/topbar_siswa.php';
                 Array.prototype.forEach.call(tr.children, function (cell) {
                     if (cell.tagName !== 'TD' && cell.tagName !== 'TH') return;
                     if (cell.classList.contains('ti-isi')) {
-                        var key = 't' + ti + '-r' + ri + '-c' + ci;
-                        var ph  = cell.textContent.replace(/\u00a0/g, ' ').trim();
-                        var inp = document.createElement('input');
-                        inp.type = 'text';
-                        inp.className = 'ti-in';
-                        inp.maxLength = 200;
+                        var key  = 't' + ti + '-r' + ri + '-c' + ci;
+                        var teks = cell.textContent.replace(/\u00a0/g, ' ').trim();
+                        var opsi = cell.classList.contains('ti-pilih')
+                            ? teks.split('|').map(function (x) { return x.trim(); }).filter(function (x) { return x !== ''; })
+                            : [];
+                        var inp;
+                        if (opsi.length >= 2) {
+                            inp = document.createElement('select');
+                            inp.className = 'ti-in';
+                            var o0 = document.createElement('option');
+                            o0.value = '';
+                            o0.textContent = 'Pilih…';
+                            inp.appendChild(o0);
+                            opsi.forEach(function (x) {
+                                var o = document.createElement('option');
+                                o.value = x;
+                                o.textContent = x;
+                                inp.appendChild(o);
+                            });
+                            var lama = SIMPAN[key] || '';
+                            if (lama !== '' && opsi.indexOf(lama) < 0) {
+                                // Jawaban tersimpan di luar opsi (mis. diisi sebelum sel diubah jadi pilihan): tetap tampil
+                                var ol = document.createElement('option');
+                                ol.value = lama;
+                                ol.textContent = lama + ' (jawaban sebelumnya)';
+                                if (!TERKUNCI) ol.disabled = true;   // saat revisi: wajib pilih opsi yang berlaku
+                                inp.appendChild(ol);
+                                ol.selected = true;
+                            } else {
+                                inp.value = lama;
+                            }
+                            if (TERKUNCI) inp.disabled = true;
+                        } else {
+                            inp = document.createElement('input');
+                            inp.type = 'text';
+                            inp.className = 'ti-in';
+                            inp.maxLength = 200;
+                            inp.placeholder = teks || 'isi di sini';
+                            inp.value = SIMPAN[key] || '';
+                            if (TERKUNCI) inp.readOnly = true;
+                        }
                         inp.setAttribute('data-key', key);
-                        inp.placeholder = ph || 'isi di sini';
-                        inp.value = SIMPAN[key] || '';
-                        if (TERKUNCI) inp.readOnly = true;
                         cell.textContent = '';
                         cell.appendChild(inp);
                         inputs.push(inp);

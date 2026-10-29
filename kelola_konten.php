@@ -199,12 +199,13 @@ function toggleGroup(el) {
 tinymce.init({
     selector: '#editor-isi',
     plugins: 'lists table link image code',
-    toolbar: 'undo redo | formatselect | bold italic underline | alignleft aligncenter alignright | bullist numlist | table tabelinput selisian | link image | code',
+    toolbar: 'undo redo | formatselect | bold italic underline | alignleft aligncenter alignright | bullist numlist | table tabelinput selisian selpilih | link image | code',
     height: 400,
     language: 'id',
     content_style: "body { font-family: 'Plus Jakarta Sans', sans-serif; font-size: 14px; line-height: 1.7; } " +
                    "table.tabel-input { outline: 2px solid #BFDBFE; } " +
-                   "td.ti-isi, th.ti-isi { background: #EFF6FF; color: #64748B; font-style: italic; }",
+                   "td.ti-isi, th.ti-isi { background: #EFF6FF; color: #64748B; font-style: italic; } " +
+                   "td.ti-pilih, th.ti-pilih { background: #FEF3C7; color: #92400E; font-style: normal; }",
     table_default_attributes: { border: '1' },
     table_default_styles: { 'border-collapse': 'collapse', 'width': '100%' },
     setup: function (editor) {
@@ -271,6 +272,7 @@ tinymce.init({
                             cell.innerHTML = t ? editor.dom.encode(t) : '&nbsp;';
                         } else {
                             editor.dom.removeClass(cell, 'ti-isi');
+                            editor.dom.removeClass(cell, 'ti-pilih');
                         }
                         var tb = editor.dom.getParent(cell, 'table');
                         if (tb) {
@@ -280,6 +282,61 @@ tinymce.init({
                     });
                 });
                 editor.nodeChanged();
+            }
+        });
+
+        // Jadikan sel terpilih sebagai pilihan (dropdown) — opsi ditulis di sel: "Nyala | Mati"
+        editor.ui.registry.addButton('selpilih', {
+            text: 'Sel Pilihan',
+            tooltip: 'Jadikan sel terpilih sebagai pilihan (dropdown) untuk siswa',
+            onAction: function () {
+                var sel = editor.dom.select('td[data-mce-selected],th[data-mce-selected]');
+                if (!sel.length) {
+                    var cur = editor.dom.getParent(editor.selection.getStart(), 'td,th');
+                    if (cur) sel = [cur];
+                }
+                if (!sel.length) {
+                    editor.notificationManager.open({ text: 'Letakkan kursor di sel tabel dulu.', type: 'warning', timeout: 2500 });
+                    return;
+                }
+                var awal = editor.dom.hasClass(sel[0], 'ti-pilih') ? sel[0].textContent.replace(/\u00a0/g, ' ').trim() : '';
+                editor.windowManager.open({
+                    title: 'Sel Pilihan',
+                    body: { type: 'panel', items: [
+                        { type: 'input', name: 'opsi', label: 'Pilihan, pisahkan dengan | (contoh: Nyala | Mati)' },
+                        { type: 'htmlpanel', html: '<p style="font-size:12px;color:#64748B;margin:0">Minimal 2 pilihan. Kosongkan lalu Simpan untuk mengembalikan sel menjadi isian teks biasa.</p>' }
+                    ]},
+                    initialData: { opsi: awal },
+                    buttons: [
+                        { type: 'cancel', text: 'Batal' },
+                        { type: 'submit', text: 'Simpan', primary: true }
+                    ],
+                    onSubmit: function (api) {
+                        var opsi = api.getData().opsi.split('|')
+                            .map(function (x) { return x.trim(); })
+                            .filter(function (x) { return x !== ''; });
+                        if (opsi.length === 1) {
+                            editor.notificationManager.open({ text: 'Isi minimal 2 pilihan.', type: 'warning', timeout: 2500 });
+                            return;
+                        }
+                        editor.undoManager.transact(function () {
+                            sel.forEach(function (cell) {
+                                editor.dom.addClass(cell, 'ti-isi');
+                                if (opsi.length) {
+                                    editor.dom.addClass(cell, 'ti-pilih');
+                                    cell.innerHTML = editor.dom.encode(opsi.join(' | '));
+                                } else {
+                                    editor.dom.removeClass(cell, 'ti-pilih');
+                                    cell.innerHTML = '&nbsp;';
+                                }
+                                var tb = editor.dom.getParent(cell, 'table');
+                                if (tb) editor.dom.addClass(tb, 'tabel-input');
+                            });
+                        });
+                        editor.nodeChanged();
+                        api.close();
+                    }
+                });
             }
         });
     }
